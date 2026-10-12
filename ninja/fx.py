@@ -630,3 +630,20 @@ class Stamp:
                 im.set_alpha(alpha)
                 surf.blit(im, r)
                 x = r.right + 14
+
+
+def emit(app, screen, img, pos):
+    """Draw something that glows: into the emissive layer for the GPU bloom, straight onto the frame on the CPU
+    path (there the glow layer has already been composited by the time UI is drawn)."""
+    app.add.blit(img, pos, special_flags=pygame.BLEND_RGB_ADD)
+    if app.gpu is None:
+        screen.blit(img, pos, special_flags=pygame.BLEND_RGB_ADD)
+
+
+def blurred(surf, tint):
+    """A frosted backdrop: downscale x8, smooth, upscale, then darken so type sits cleanly on top."""
+    small = pygame.transform.smoothscale(surf, (W // 8, H // 8))
+    small = pygame.transform.gaussian_blur(small, 2)
+    out = pygame.transform.smoothscale(small, (W, H))
+    out.fill(tint, special_flags=pygame.BLEND_RGB_MULT)
+    return out

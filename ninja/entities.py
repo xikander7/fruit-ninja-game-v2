@@ -54,7 +54,7 @@ def draw_sprite(surf, img, x, y, ang, s, vx, vy, dt):
 def flight_time(vy, static):
     if static:
         return None
-    return max(0.6, 2 * max(0.0, -vy) / GRAVITY)  # time to fall back to the launch height
+    return max(0.6, 2 * abs(vy) / GRAVITY)  # time to fall back to the launch height (either way up)
 
 
 class Body:
@@ -64,11 +64,18 @@ class Body:
     def __init__(self, art, kind, x, y, vx, vy, static=False):
         self.kind = kind
         self.bomb = kind == "bomb"
-        self.ft = None if self.bomb else FRUITS[kind]
-        self.special = "" if self.bomb else self.ft.special
-        self.r = 38 if self.bomb else self.ft.r
+        self.hazard = "ice" if kind == "icebomb" else ""  # an ice bomb: no fruit, not a bomb either
+        self.ft = None if self.bomb or self.hazard else FRUITS[kind]
+        self.special = "" if self.ft is None else self.ft.special
+        self.r = 38 if self.ft is None else self.ft.r
+        self.points = 0 if self.ft is None else self.ft.points  # what a cut scores (the golden fruit's last: more)
+        self.hp, self.hit_t = (5 if kind == "golden" else 1), -1.0  # hits it takes; when it was last hit (world time)
+        # a drop costs a strike or a life only for ordinary fruit: never bombs, power-ups or the hazard specials
+        self.costly = self.ft is not None and not self.special and kind not in ("golden", "chaos")
         if self.bomb:
             self.img, self.shadow = art.bomb, art.bomb_shadow
+        elif self.hazard:
+            self.img, self.shadow = art.icebomb, art.icebomb_shadow
         else:
             fa = art.fruits[kind]
             self.img, self.shadow = fa.whole, fa.shadow
@@ -85,7 +92,7 @@ class Body:
             self.vy += g * dt
             self.x += self.vx * dt
             self.y += self.vy * dt
-            if self.y < H - self.r:
+            if self.r < self.y < H - self.r:  # launched from the bottom, or from the top while gravity is flipped
                 self.entered = True
         self.ang += self.spin * dt
         self.age += dt

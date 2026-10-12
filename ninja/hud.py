@@ -7,6 +7,7 @@ from .art import FRUITS
 from .boss import HP as BOSS_HP, CRACK_AT, TALLY_HOLD, TALLY_FADE
 from .fx import glow
 from .fever import GRADE as FEVER_GRADE
+from .hazards import FREEZE_TIME, FLIP_TIME, ICE, VIOLET, draw_grades as hazard_grades
 from .powers import KI_MAX
 from .settings import W, H, WASHI, GOLD, HANKO, MUTED
 
@@ -146,7 +147,9 @@ def draw_play_hud(play, ui):
     # power-up chips: what's active and how long it has left
     for val, total, name, col in ((play.freeze, 6.0, "FREEZE", FRUITS["freeze"].juice),
                                   (play.frenzy, 4.5, "FRENZY", FRUITS["frenzy"].juice),
-                                  (play.double, 8.0, "DOUBLE ×2", FRUITS["double"].juice)):
+                                  (play.double, 8.0, "DOUBLE ×2", FRUITS["double"].juice),
+                                  (play.blade_frozen, FREEZE_TIME, "BLADE FROZEN", ICE),
+                                  (play.hz.flip_t, FLIP_TIME, "GRAVITY FLIPPED", VIOLET)):
         if val > 0:
             label(ui, f, f.mono12, name, col, (W - 42, y), "midright", tracking=3)
             thin_bar(ui, W - 42 - 140, y + 14, 140, val / total, col, right=True)
@@ -241,6 +244,7 @@ def draw_grades(play, screen):
         ember.set_alpha(int(255 * gain * k * (0.75 + 0.25 * math.sin(w.t * 5))))
         # it is light, not paint: on the GPU it goes to the glow layer so the bloom carries it
         (screen if app.gpu is None else app.add).blit(ember, (0, 0))
+    hazard_grades(play, screen)
     k = play.fever.grade() if play.fever else 0.0
     if k > 0:  # Fever's warm gold (the GPU also lifts saturation in its post-fx)
         screen.fill(lerp_rgb((255, 255, 255), FEVER_GRADE, k), special_flags=pygame.BLEND_RGB_MULT)

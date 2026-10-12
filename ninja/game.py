@@ -12,7 +12,8 @@ from .hud import label, brush_x, chevron, hairline_ring, draw_play_hud, draw_gra
 from .powers import KEYS as POWER_KEYS, KI_PER_COMBO, KiMeter, on_cut, tick_power, use_power
 from .fever import Fever, on_cut as fever_cut, tick_fever, fever_fx
 from .boss import BossDirector, slice_boss, tick_boss
-from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade
+from .hazards import Hazards, roll_hazard, launch_hazard, on_hit as hazard_hit, slice_hazards, tick_hazards, throw_shuriken, blade_colors, draw as draw_hazards
+from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade, emit, blurred
 from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
 SLICE_SPEED = 300  # px/s — just moving the cursor slices; a slow drift doesn't
@@ -48,23 +49,6 @@ def write_save(data):
         os.replace(tmp, SAVE_PATH)  # atomic: a crash never leaves half a file
     except OSError:
         pass
-
-
-def emit(app, screen, img, pos):
-    """Draw something that glows: into the emissive layer for the GPU bloom, straight onto the frame on the CPU
-    path (there the glow layer has already been composited by the time UI is drawn)."""
-    app.add.blit(img, pos, special_flags=pygame.BLEND_RGB_ADD)
-    if app.gpu is None:
-        screen.blit(img, pos, special_flags=pygame.BLEND_RGB_ADD)
-
-
-def blurred(surf, tint):
-    """A frosted backdrop: downscale x8, smooth, upscale, then darken so type sits cleanly on top."""
-    small = pygame.transform.smoothscale(surf, (W // 8, H // 8))
-    small = pygame.transform.gaussian_blur(small, 2)
-    out = pygame.transform.smoothscale(small, (W, H))
-    out.fill(tint, special_flags=pygame.BLEND_RGB_MULT)
-    return out
 
 
 # ---------------- world: everything that lives on the dojo wall ----------------
@@ -567,6 +551,7 @@ class Play(Scene):
         self.ki, self.power, self.last_power = KiMeter() if "powers" in self.features else None, None, "timestop"
         self.fever = Fever() if "fever" in self.features else None
         self.boss = BossDirector() if "boss" in self.features else None
+        self.hz, self.blade_frozen = Hazards(), 0.0  # blade_frozen: s left of an ice bomb's frozen blade
         self.w = World(app)
         self.score = 0
         self.best_prev = app.save["best"][mode]
@@ -595,14 +580,16 @@ class Play(Scene):
 
     # --- spawning ---
     def launch(self, kind, x=None):
-        r = 38 if kind == "bomb" else FRUITS[kind].r
+        if launch_hazard(self, kind, x):  # a shuriken flies on its own
+            return
+        r = 38 if kind in ("bomb", "icebomb") else FRUITS[kind].r
         x0 = x if x is not None else random.uniform(W * 0.12, W * 0.88)
         y0 = H + r + 10
         apex = random.uniform(H * 0.07, H * 0.42)
         vy = -math.sqrt(2 * GRAVITY * (y0 - apex))
         t = -vy / GRAVITY
         xa = min(max(x0 + random.uniform(-W * 0.25, W * 0.25), W * 0.18), W * 0.82)
-        self.w.throw(kind, x0, y0, (xa - x0) / t, vy)
+        self.w.throw(kind, x0, H - y0 if self.w.gflip < 0 else y0, (xa - x0) / t, -vy if self.w.gflip < 0 else vy)  # flipped: from the top
         self.app.audio.play("throw", 0.5)
 
     def wave(self):
@@ -616,6 +603,7 @@ class Play(Scene):
                 kinds[i] = "bomb"
         if all(k == "bomb" for k in kinds):
             kinds[0] = random.choices(REGULAR, WEIGHTS)[0]
+        kinds = [roll_hazard(random, e) or k for k in kinds] if "hazards" in self.features else kinds
         if self.mode == "arcade" and self.special_cd <= 0 and random.random() < 0.45:
             kinds[0] = random.choice(SPECIALS)
             self.special_cd = 8.0
@@ -645,6 +633,8 @@ class Play(Scene):
 
     def hit(self, b, seg):
         w = self.w
+        if hazard_hit(self, b, seg):  # ice bomb, and the golden fruit's first hits
+            return
         if b.bomb:
             w.explode(b)
             self.stats["bombs"] += 1
@@ -662,7 +652,7 @@ class Play(Scene):
         on_cut(self, b)  # Ki, and Dragon Fire's ignition
         fever_cut(self)  # the chain grows before the cut is scored: the cut that starts Fever already pays x5
         crit = self.mode == "arcade" and not b.special and random.random() < 0.06
-        pts = b.ft.points * (2 if self.double > 0 else 1) + 10 * crit
+        pts = b.points * (2 if self.double > 0 else 1) + 10 * crit
         pts = self.fever.points(pts) if self.fever else pts
         if crit:
             w.popups.add(f"Critical +{self.fever.points(10) if self.fever else 10}", b.x, b.y - 50, GOLD, True)
@@ -688,6 +678,8 @@ class Play(Scene):
             self.app.audio.play("power")
 
     def slice(self):
+        if slice_hazards(self):  # parries shurikens; True while an ice bomb has frozen the blade
+            return
         slice_boss(self)  # the boss is never in w.bodies (no power targets it); its own hits, here
         for seg in () if self.power and self.power.blocks_slicing else self.app.segments:
             for b in self.w.bodies:
@@ -751,6 +743,7 @@ class Play(Scene):
             self.use_power(self.last_power)
 
     use_power = use_power
+    throw_shuriken = throw_shuriken
 
     def focus_lost(self):
         if self.state == "play":
@@ -830,10 +823,11 @@ class Play(Scene):
                 if self.combo_t <= 0:
                     self.finish_combo()
         tick_boss(self, wdt * w.time_scale())  # world time: Time Stop and hit-stop hold it
+        tick_hazards(self, dt)
         for b in w.bodies:
             if b.alive and b.gone():
                 b.alive = False
-                if not b.bomb and not b.special and not b.rain and b.entered:
+                if b.costly and not b.rain and b.entered:
                     self.strike(b)
         w.bodies = [b for b in w.bodies if b.alive]
         # bomb fuses fizz
@@ -871,6 +865,7 @@ class Play(Scene):
             img.set_alpha(a)
             L.blit(img, img.get_rect(center=(x, H - 46)))
         self.boss and self.boss.draw(L, add)
+        draw_hazards(self, L, add)
         if self.power:
             self.power.draw(L, add, self.app.ui)
 
@@ -1196,7 +1191,7 @@ class App:
         self.draw_blade()
 
     def draw_blade(self):
-        colors = getattr(getattr(self.scene, "power", None), "blade", None) or BLADES[self.save["blade"]][:3]
+        colors = blade_colors(self.scene) or BLADES[self.save["blade"]][:3]
         xs = [p[0] for p in self.trail.pts if p] + [self.mouse[0]]
         ys = [p[1] for p in self.trail.pts if p] + [self.mouse[1]]
         box = pygame.Rect(min(xs) - 40, min(ys) - 40, max(xs) - min(xs) + 80, max(ys) - min(ys) + 80).clip(self.frame.get_rect())
