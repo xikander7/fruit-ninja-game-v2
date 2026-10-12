@@ -12,6 +12,7 @@ import pygame  # noqa: E402
 
 from ninja import art, game  # noqa: E402
 from ninja.fx import stamp_scale  # noqa: E402
+from ninja.settings import W, H  # noqa: E402
 
 DT = 1 / 60
 
@@ -79,6 +80,79 @@ class Scenes(unittest.TestCase):
         p.score -= 10  # a bomb in arcade: the counter rolls back down too
         run(self.app, 60)
         self.assertEqual(round(p.shown), 1224)
+
+
+class Layers(unittest.TestCase):
+    """The UI layer (HUD, stamps, overlays) and the glow layer, around snapshots and wipes."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        game.SAVE_PATH = Path(self.tmp.name) / "save.json"
+        self.app = game.App()
+
+    def tearDown(self):
+        pygame.quit()
+        self.tmp.cleanup()
+
+    def test_ui_is_composited_onto_the_cpu_frame(self):
+        app = self.app
+
+        class Marker(game.Scene):
+            def draw(self, screen):
+                screen.fill((10, 10, 10))
+                app.ui.fill((200, 40, 40, 255), (100, 100, 20, 20))
+
+        app.scene, app.wipe = Marker(), None
+        app.step(DT, [])
+        self.assertEqual(tuple(app.frame.get_at((110, 110)))[:3], (200, 40, 40))
+        self.assertEqual(tuple(app.frame.get_at((300, 300)))[:3], (10, 10, 10))
+
+    def test_hud_draws_to_the_ui_layer(self):
+        p = game.Play(self.app, "arcade")
+        p.state = "play"
+        self.app.scene, self.app.wipe = p, None
+        run(self.app, 5)
+        self.assertGreater(self.app.ui.get_at((60, 70)).a, 0)  # the score numerals
+
+    def test_gpu_snapshot_flattens_glow_and_ui(self):
+        app = self.app
+        app.gpu = object()  # snapshot only tests it against None
+        try:
+            app.frame.fill((20, 20, 20))
+            app.add.fill((0, 0, 0))
+            app.add.fill((30, 0, 0), (0, 0, 50, 50))
+            app.ui.fill((0, 0, 0, 0))
+            app.ui.fill((0, 0, 255, 255), (60, 0, 10, 10))
+            snap = app.snapshot()
+        finally:
+            app.gpu = None
+        self.assertEqual(tuple(snap.get_at((10, 10)))[:3], (50, 20, 20))
+        self.assertEqual(tuple(snap.get_at((65, 5)))[:3], (0, 0, 255))
+        self.assertEqual(tuple(snap.get_at((200, 200)))[:3], (20, 20, 20))
+
+    def test_wipe_hides_the_new_scenes_glow_and_ui_under_its_pieces(self):
+        wipe = game.Wipe(pygame.Surface((W, H)))
+        wipe.t = 0.1
+        frame, add, ui = pygame.Surface((W, H)), pygame.Surface((W, H)), pygame.Surface((W, H), pygame.SRCALPHA)
+        add.fill((255, 255, 255))
+        ui.fill((255, 255, 255, 255))
+        wipe.draw(frame, add, False, ui)
+        # both pieces still cover the outer edges; the gap opens along the cut in the middle
+        for x in (40, W - 40):
+            self.assertEqual(tuple(add.get_at((x, H // 2)))[:3], (0, 0, 0))
+            self.assertEqual(ui.get_at((x, H // 2)).a, 0)
+        self.assertEqual(ui.get_at((W // 2, H // 2)).a, 255)  # revealed: the new scene's UI shows
+
+    def test_game_over_key_cuts_the_fruit_and_stamps(self):
+        p = game.Play(self.app, "classic")
+        over = game.GameOver(self.app, p, self.app.frame.copy())
+        self.app.scene, self.app.wipe = over, None
+        stamps = len(over.w.stamps)
+        over.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN, mod=0, unicode="", scancode=0))
+        self.assertFalse(over.retry.body.alive)
+        self.assertEqual(len(over.w.stamps), stamps + 1)
+        self.assertEqual(over.choice, "retry")
+        self.assertTrue(over.menu.body.alive)
 
 
 class SealDrop(unittest.TestCase):

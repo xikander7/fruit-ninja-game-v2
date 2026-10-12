@@ -103,5 +103,74 @@ class PostFXRender(unittest.TestCase):
         self.assertLess(out.get_at((W // 2, H - 110))[0], 30)
 
 
+    def render_ui(self, base, emissive, params, ui):
+        self.fx.render(base, emissive, params, VIEW, target=self.fbo, ui=ui)
+        img = pygame.image.frombytes(self.fbo.read(components=3), (W, H), "RGB")
+        return pygame.transform.flip(img, False, True)
+
+    def test_ui_layer_skips_every_post_effect(self):
+        base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
+        base.fill((90, 90, 90))
+        base.fill((255, 255, 255), (W // 2 + 200 - 3, H // 2 - 3, 6, 6))  # a world marker, for contrast
+        ui = pygame.Surface((W, H), pygame.SRCALPHA)
+        ui.fill((200, 40, 40, 255), (60, 40, 30, 20))  # a HUD marker in the corner, where vignette and fringes peak
+        harsh = {"zoom": 1.2, "aberration": 0.05, "saturation": 0.2, "flash": 0.3,
+                 "shocks": [(0.06, 0.07, 0.03, 0.04)]}
+        self.fx.time = 0.0
+        out = self.render_ui(base, emissive, harsh, ui)
+        for x, y in ((60, 40), (89, 59), (75, 50)):  # exactly in place, exactly its colour: no grade, no grain
+            self.assertEqual(tuple(out.get_at((x, y)))[:3], (200, 40, 40))
+        self.fx.time = 0.0
+        bare = self.render_ui(base, emissive, harsh, None)
+        for x, y in ((58, 50), (92, 50), (75, 37), (75, 62)):  # just outside: the marker leaves no fringe
+            self.assertEqual(out.get_at((x, y)), bare.get_at((x, y)))
+        # meanwhile the world marker did move with the zoom
+        row = [bare.get_at((x, H // 2))[0] for x in range(W // 2, W)]
+        self.assertGreater(row.index(max(row)), 220)
+
+    def test_half_transparent_ui_is_premultiplied_alpha_over(self):
+        base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
+        ui = pygame.Surface((W, H), pygame.SRCALPHA)
+        ui.fill((128, 128, 128, 128))  # premultiplied: white at half coverage
+        self.fx.time = 0.0
+        r, g, b, _ = self.render_ui(base, emissive, {}, ui).get_at((W // 2, H // 2))
+        for c in (r, g, b):
+            self.assertAlmostEqual(c, 128, delta=4)
+
+
+@unittest.skipIf(CTX is None, "no standalone OpenGL context")
+class Lifetime(unittest.TestCase):
+    def test_release_frees_a_context_it_created_but_not_a_borrowed_one(self):
+        from unittest import mock
+        from ninja.gpu import PostFX
+        own = moderngl.create_standalone_context()
+        with mock.patch("moderngl.create_context", lambda: own):
+            fx = PostFX()
+        fx.release()
+        CTX.__enter__()  # releasing a context leaves none current: make the shared test context current again
+        self.assertEqual(type(own.mglo).__name__, "InvalidObject")
+        borrowed = PostFX(CTX)
+        borrowed.release()
+        self.assertNotEqual(type(CTX.mglo).__name__, "InvalidObject")
+
+
+@unittest.skipIf(CTX is None, "no moderngl")
+class WindowMapping(unittest.TestCase):
+    def test_letterbox_and_to_logical(self):
+        from ninja.gpu import letterbox, to_logical
+        self.assertEqual(letterbox(0, 0, W, H), (0, 0, W, H))
+        self.assertEqual(letterbox(0, 0, 2560, 1080), (320, 0, 1920, 1080))  # wider: pillarbox bars left/right
+        self.assertEqual(letterbox(0, 0, 1280, 1024), (0, 152, 1280, 720))  # taller: letterbox bars top/bottom
+        cases = [((W, H), (640, 360), (640, 360)),
+                 ((2560, 1080), (320, 0), (0, 0)), ((2560, 1080), (2240, 1080), (W, H)),
+                 ((2560, 1080), (1280, 540), (640, 360)), ((2560, 1080), (100, 540), (-146.67, 360)),
+                 ((1280, 1024), (0, 152), (0, 0)), ((1280, 1024), (640, 512), (640, 360)),
+                 ((1280, 1024), (1280, 872), (W, H))]
+        for size, pos, want in cases:
+            got = to_logical(pos, size)
+            self.assertAlmostEqual(got[0], want[0], delta=0.01, msg=(size, pos))
+            self.assertAlmostEqual(got[1], want[1], delta=0.01, msg=(size, pos))
+
+
 if __name__ == "__main__":
     unittest.main()

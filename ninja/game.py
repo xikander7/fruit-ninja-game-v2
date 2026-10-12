@@ -13,6 +13,10 @@ from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, 
 
 SLICE_SPEED = 300  # px/s — just moving the cursor slices; a slow drift doesn't
 MAX_JUMP = 350  # px in one motion event
+# The UI layer is cleared to alpha 1, not 0. pygame blends onto a pixel with any alpha as dst + (src - dst) * a, which
+# over black is premultiplied colour, but copies straight colour onto a fully clear pixel; the 1 keeps every pixel
+# premultiplied, so text over its own shadow composites exactly as it did drawn straight onto the frame.
+UI_CLEAR = (0, 0, 0, 1)
 
 
 # ---------------- save data ----------------
@@ -110,6 +114,22 @@ def brush_x(size, color, outline=False):
     img = pygame.transform.smoothscale(m, (size, size))
     _BRUSH[key] = img
     return img
+
+
+_CHEVRONS = {}
+
+
+def chevron(step, color):
+    """A thin < or > (step -1 / 1), anti-aliased by drawing 4x and smoothscaling (aalines only antialias over an
+    opaque surface, and the UI layer is transparent)."""
+    key = (step, color)
+    if key not in _CHEVRONS:
+        k = 4
+        s = pygame.Surface((12 * k, 18 * k), pygame.SRCALPHA)
+        pts = [((6 - 3 * step) * k, 2 * k), ((6 + 4 * step) * k, 9 * k), ((6 - 3 * step) * k, 16 * k)]
+        pygame.draw.lines(s, (*color, 255), False, pts, k * 3 // 2)  # 1.5 px: the weight aalines read at
+        _CHEVRONS[key] = pygame.transform.smoothscale(s, (12, 18))
+    return _CHEVRONS[key]
 
 
 _RINGS = {}
@@ -302,9 +322,10 @@ class World:
         screen.blit(L, (rox, roy))
 
     def draw_overlay(self, screen):
+        ui = self.app.ui  # stamps and popups are UI: they sit above the post-processing, never warped or graded
         for s in self.stamps:
-            s.draw(screen)
-        self.popups.draw(screen)
+            s.draw(ui)
+        self.popups.draw(ui)
         if self.flash > 0 and self.app.gpu is None:  # on the GPU the flash is a post-fx param
             screen.fill((int(255 * self.flash),) * 3, special_flags=pygame.BLEND_RGB_ADD)
 
@@ -344,11 +365,19 @@ class SliceButton:
             self.body.y = self.y + math.sin(self.t * 1.8) * 4
             for seg in segments:
                 if seg_hits_circle(*seg, self.body.x, self.body.y, self.body.r * 1.25):
-                    self.world.cut(self.body, *seg)
-                    self.world.stamp(self.glyph, self.title, self.x, self.y - 10, 110)
-                    self.cut_at = self.t
+                    self.cut(*seg)
                     return True
         return False
+
+    def cut(self, ax=None, ay=None, bx=None, by=None):
+        """The fruit is cut and its seal stamped; with no segment (a key press) the cut is a diagonal stroke."""
+        if not self.body.alive:
+            return
+        if ax is None:
+            ax, ay, bx, by = self.x - 80, self.y - 60, self.x + 80, self.y + 60
+        self.world.cut(self.body, ax, ay, bx, by)
+        self.world.stamp(self.glyph, self.title, self.x, self.y - 10, 110)
+        self.cut_at = self.t
 
     def draw(self, surf):
         f = self.world.art.fonts
@@ -481,9 +510,7 @@ class Menu(Scene):
                 self.app.running = False
             elif e.key in (pygame.K_1, pygame.K_2, pygame.K_3) and not self.chosen:
                 b = self.buttons[e.key - pygame.K_1]
-                self.w.cut(b.body, b.x - 80, b.y - 60, b.x + 80, b.y + 60)
-                self.w.stamp(b.glyph, b.title, b.x, b.y - 10, 110)
-                b.cut_at = b.t
+                b.cut()
                 self.chosen, self.chosen_t = b.mode, 0.0
             elif e.key in (pygame.K_LEFT, pygame.K_a):
                 self.cycle_blade(-1)
@@ -518,7 +545,8 @@ class Menu(Scene):
     def fx_params(self):
         return self.w.fx_params()
 
-    def draw_title(self, screen):
+    def draw_title(self, screen, ui):
+        """The title is art on the wall (its glint lives in the glow layer); the subtitle is UI."""
         f = self.app.art.fonts
         r = self.title_rect
         u = (self.t - self.SWEEP_AT) / self.SWEEP
@@ -552,44 +580,45 @@ class Menu(Scene):
         # subtitle settles in once the title is cut
         a = int(255 * max(0.0, min(1.0, (u - 0.9) / 0.5)))
         if a:
-            sub = label(screen, f, f.mono15, "NIGHT DOJO", GOLD, (W / 2, r.bottom + 14), tracking=7, alpha=a)
-            line = pygame.Surface((44, 1))
-            line.fill(GOLD)
-            line.set_alpha(a // 2)
-            screen.blit(line, (sub.left - 62, sub.centery))
-            screen.blit(line, (sub.right + 18, sub.centery))
+            sub = label(ui, f, f.mono15, "NIGHT DOJO", GOLD, (W / 2, r.bottom + 14), tracking=7, alpha=a)
+            line = pygame.Surface((44, 1), pygame.SRCALPHA)  # per-pixel alpha: a faded opaque surface blits opaque
+            line.fill((*GOLD, a // 2))
+            ui.blit(line, (sub.left - 62, sub.centery))
+            ui.blit(line, (sub.right + 18, sub.centery))
 
     def draw(self, screen):
         f = self.app.art.fonts
+        ui = self.app.ui
         self.w.draw(screen)
-        self.draw_title(screen)
+        self.draw_title(screen, ui)
         for b in self.buttons:
-            b.draw(screen)
+            b.draw(ui)
         # blade picker: small, bottom-left
         name = self.app.save["blade"]
         x0, y = 48, H - 66
-        label(screen, f, f.mono12, "BLADE", MUTED, (x0, y - 30), "midleft", tracking=4)
+        label(ui, f, f.mono12, "BLADE", MUTED, (x0, y - 30), "midleft", tracking=4)
         self.arrow_rects = []
         prev = pygame.Rect(0, 0, 36, 36)
         prev.center = (x0 + 4, y)
-        nm = label(screen, f, f.best, name, WASHI, (x0 + 24, y), "midleft")
+        nm = label(ui, f, f.best, name, WASHI, (x0 + 24, y), "midleft")
         nxt = pygame.Rect(0, 0, 36, 36)
         nxt.center = (nm.right + 20, y)
         for step, rr in ((-1, prev), (1, nxt)):
             self.arrow_rects.append((step, rr))
             cx, cy = rr.center
-            pygame.draw.aalines(screen, MUTED, False, [(cx - 3 * step, cy - 7), (cx + 4 * step, cy), (cx - 3 * step, cy + 7)])
+            img = chevron(step, MUTED)
+            ui.blit(img, img.get_rect(center=(cx, cy)))
         swatch = pygame.Surface((22, 2))
         swatch.fill(BLADES[name][1])
-        screen.blit(swatch, (nxt.right + 4, y - 1))
+        ui.blit(swatch, (nxt.right + 4, y - 1))
         if self.app.gpu:  # glow on the GPU only: emit() would draw it onto the CPU frame a second time
             self.app.add.blit(swatch, (nxt.right + 4, y - 1), special_flags=pygame.BLEND_RGB_ADD)
         locked = [(n, b[3]) for n, b in BLADES.items() if n not in self.unlocked()]
         hint = f"Next: {locked[0][0]} at best {locked[0][1]}" if locked else "All blades unlocked"
-        label(screen, f, f.mono13, hint, MUTED, (x0, y + 28), "midleft")
+        label(ui, f, f.mono13, hint, MUTED, (x0, y + 28), "midleft")
         # controls: bottom-right, quiet
-        label(screen, f, f.mono13, "Move the cursor fast to slice a fruit", MUTED, (W - 48, y), "midright")
-        label(screen, f, f.mono13, "1 2 3 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
+        label(ui, f, f.mono13, "Move the cursor fast to slice a fruit", MUTED, (W - 48, y), "midright")
+        label(ui, f, f.mono13, "1 2 3 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
               MUTED, (W - 48, y + 28), "midright")
         self.w.draw_overlay(screen)
 
@@ -853,7 +882,7 @@ class Play(Scene):
         save["total_sliced"] += self.stats["sliced"]
         write_save(save)
         self.app.audio.fuse(False)
-        snap = self.app.frame.copy()
+        snap = self.app.snapshot()
         self.app.go(lambda: GameOver(self.app, self, snap))
 
     def draw_world_extra(self, L, add):
@@ -867,6 +896,7 @@ class Play(Scene):
             L.blit(img, img.get_rect(center=(x, H - 46)))
 
     def draw_hud(self, screen):
+        """`screen` is the UI layer: above the post-processing, so the camera never moves, fringes or dims it."""
         f = self.app.art.fonts
         # score: left, gold, the number rolls toward the real value
         label(screen, f, f.mono12, "SCORE", MUTED, (42, 34), "midleft", tracking=4)
@@ -912,9 +942,8 @@ class Play(Scene):
                                       (self.double, 8.0, "DOUBLE ×2", FRUITS["double"].juice)):
             if val > 0:
                 label(screen, f, f.mono12, name, col, (W - 42, y), "midright", tracking=3)
-                track = pygame.Surface((140, 2))
-                track.fill(WASHI)
-                track.set_alpha(40)
+                track = pygame.Surface((140, 2), pygame.SRCALPHA)
+                track.fill((*WASHI, 40))
                 screen.blit(track, (W - 42 - 140, y + 14))
                 fill = int(140 * val / total)
                 if fill > 0:
@@ -923,15 +952,21 @@ class Play(Scene):
 
     def draw_pause(self, screen):
         f = self.app.art.fonts
-        if self.pause_bg is None:  # the world is frozen: blur it once, not every frame
-            self.pause_bg = blurred(screen, (120, 114, 110))
+        ui = self.app.ui
+        if self.pause_bg is None:  # the world is frozen: blur it (with its HUD) once, not every frame
+            snap = screen.copy()
+            if self.app.gpu:
+                snap.blit(self.app.add, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+            snap.blit(ui, (0, 0), special_flags=pygame.BLEND_PREMULTIPLIED)  # (CPU: flattened only after draw)
+            self.pause_bg = blurred(snap, (120, 114, 110))
         screen.blit(self.pause_bg, (0, 0))
         self.app.add.fill((0, 0, 0))  # no glow bleeding through the frosted glass
-        label(screen, f, f.pause, "Paused", WASHI, (W / 2, H / 2 - 28), tracking=2)
+        ui.fill(UI_CLEAR)  # the HUD is in the blur now
+        label(ui, f, f.pause, "Paused", WASHI, (W / 2, H / 2 - 28), tracking=2)
         line = pygame.Surface((64, 1))
         line.fill(GOLD)
-        screen.blit(line, (W / 2 - 32, H / 2 + 24))
-        label(screen, f, f.mono15, "Click or Esc to resume  ·  Q to quit to menu", MUTED, (W / 2, H / 2 + 58))
+        ui.blit(line, (W / 2 - 32, H / 2 + 24))
+        label(ui, f, f.mono15, "Click or Esc to resume  ·  Q to quit to menu", MUTED, (W / 2, H / 2 + 58))
 
     def draw(self, screen):
         w = self.w
@@ -952,7 +987,7 @@ class Play(Scene):
             ember.set_alpha(int(255 * gain * k * (0.75 + 0.25 * math.sin(w.t * 5))))
             # it is light, not paint: on the GPU it goes to the glow layer so the bloom carries it
             (screen if self.app.gpu is None else self.app.add).blit(ember, (0, 0))
-        self.draw_hud(screen)
+        self.draw_hud(self.app.ui)
         w.draw_overlay(screen)
         if self.paused:
             self.draw_pause(screen)
@@ -977,8 +1012,10 @@ class GameOver(Scene):
     def handle(self, e):
         if e.type == pygame.KEYDOWN and not self.choice:
             if e.key in (pygame.K_RETURN, pygame.K_r, pygame.K_SPACE):
+                self.retry.cut()  # the same answer a swipe gets: the fruit splits and its seal lands
                 self.choose("retry")
             elif e.key == pygame.K_ESCAPE:
+                self.menu.cut()
                 self.choose("menu")
 
     def choose(self, c):
@@ -1016,11 +1053,12 @@ class GameOver(Scene):
     def draw(self, screen):
         f = self.app.art.fonts
         self.w.draw(screen)
+        ui = self.app.ui  # everything over the blurred wall is UI
         p = self.play
         if self.t > self.COUNT_AT:
-            sr = label(screen, f, f.final, str(round(self.shown)), GOLD, (W / 2, 290))
+            sr = label(ui, f, f.final, str(round(self.shown)), GOLD, (W / 2, 290))
             best = self.app.save["best"][p.mode]
-            label(screen, f, f.mono12, f"{MODES[p.mode]['title'].upper()}  ·  BEST {best}", MUTED, (W / 2, sr.bottom + 6),
+            label(ui, f, f.mono12, f"{MODES[p.mode]['title'].upper()}  ·  BEST {best}", MUTED, (W / 2, sr.bottom + 6),
                   tracking=3)
             # stats row: quiet labels, the numbers in paper white
             parts = [("Sliced", p.stats["sliced"]), ("Best combo", p.stats["best_combo"]), ("Bombs", p.stats["bombs"])]
@@ -1033,12 +1071,12 @@ class GameOver(Scene):
             for a, b in imgs:
                 for im in (a, b):
                     im.set_alpha(255)
-                    screen.blit(im, im.get_rect(midleft=(x, y)))
+                    ui.blit(im, im.get_rect(midleft=(x, y)))
                     x += im.get_width()
                 x += gap
         if self.t > 0.6:
-            self.retry.draw(screen)
-            self.menu.draw(screen)
+            self.retry.draw(ui)
+            self.menu.draw(ui)
         self.w.draw_overlay(screen)
 
 
@@ -1049,13 +1087,14 @@ class Wipe:
 
     def __init__(self, snap):
         xt, xb = W * 0.62, W * 0.38
-        self.pieces = []
+        self.pieces, self.polys = [], []
         for poly in ([(0, 0), (xt, 0), (xb, H), (0, H)], [(xt, 0), (W, 0), (W, H), (xb, H)]):
             s = snap.convert_alpha()
             m = pygame.Surface((W, H), pygame.SRCALPHA)
             pygame.draw.polygon(m, (255, 255, 255, 255), poly)
             s.blit(m, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
             self.pieces.append(s)
+            self.polys.append(poly)
         L = math.hypot(xb - xt, H)
         self.n = (H / L, -(xb - xt) / L)  # normal pointing right
         self.line = ((xt, 0), (xb, H))
@@ -1065,14 +1104,20 @@ class Wipe:
         self.t += dt
         return self.t < self.DUR
 
-    def draw(self, screen, add=None, cpu=True):
+    def draw(self, screen, add=None, cpu=True, ui=None):
         k = min(1.0, self.t / self.DUR)
         e = 1 - (1 - k) ** 3
         d = e * W * 0.8
         nx, ny = self.n
-        offs = ((-nx * d, -ny * d - e * 40), (nx * d, ny * d + e * 40))
-        for piece, off in zip(self.pieces, offs):
-            screen.blit(piece, off)
+        offs = ((int(-nx * d), int(-ny * d - e * 40)), (int(nx * d), int(ny * d + e * 40)))
+        for piece, poly, (ox, oy) in zip(self.pieces, self.polys, offs):
+            screen.blit(piece, (ox, oy))
+            # the new scene's glow and UI are separate layers: hide them wherever the old picture still covers it
+            moved = [(x + ox, y + oy) for x, y in poly]
+            if add is not None:
+                pygame.draw.polygon(add, (0, 0, 0), moved)
+            if ui is not None:
+                pygame.draw.polygon(ui, (0, 0, 0, 0), moved)
         # the cut's edge glows and travels with each half, burning out as they part
         c = (1 - k) ** 1.5
         if c <= 0.02:
@@ -1096,6 +1141,8 @@ class App:
         self.open_window()
         pygame.display.set_caption("Fruit Ninja · Night Dojo")
         self.add = pygame.Surface((W, H))  # emissive layer: glows only, black = none
+        self.ui = pygame.Surface((W, H), pygame.SRCALPHA)  # HUD and overlays, premultiplied: laid over after post-fx
+        self.ui.fill(UI_CLEAR)
         self.frame.fill(LACQUER)
         f = _font(Fonts.MONO[0], 15, Fonts.MONO[1])
         img = f.render("Sharpening the blade…", True, MUTED)
@@ -1141,17 +1188,25 @@ class App:
 
     def to_logical(self, pos):
         """Window pixels -> 1280x720 through the letterbox (SCALED did this for us on the CPU path)."""
-        from .gpu import letterbox
-        x, y, w, h = letterbox(0, 0, *pygame.display.get_window_size())
-        return ((pos[0] - x) * W / w, (pos[1] - y) * H / h)
+        from .gpu import to_logical
+        return to_logical(pos, pygame.display.get_window_size())
 
     def present(self, params):
         if self.gpu:
-            self.gpu.render(self.frame, self.add, params, (0, 0, *pygame.display.get_window_size()))
+            self.gpu.render(self.frame, self.add, params, (0, 0, *pygame.display.get_window_size()), ui=self.ui)
         pygame.display.flip()
 
-    def go(self, make_scene):
+    def snapshot(self):
+        """The last shown picture, bar post-fx (wipes and the game-over backdrop start from it). On the CPU path the
+        frame already holds glow and UI; on the GPU path they are still separate layers, so flatten them on."""
         snap = self.frame.copy()
+        if self.gpu:
+            snap.blit(self.add, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+            snap.blit(self.ui, (0, 0), special_flags=pygame.BLEND_PREMULTIPLIED)
+        return snap
+
+    def go(self, make_scene):
+        snap = self.snapshot()
         self.scene = make_scene()
         self.wipe = Wipe(snap)
         self.audio.play("swoosh", 0.9)
@@ -1218,11 +1273,14 @@ class App:
                                 random.uniform(1, 1.8), col, "spark", 0.6)
         self.scene.update(dt)
         self.add.fill((0, 0, 0))
+        self.ui.fill(UI_CLEAR)
         self.scene.draw(self.frame)
         if self.wipe and not self.wipe.update(dt):
             self.wipe = None
         if self.wipe:
-            self.wipe.draw(self.frame, self.add, self.gpu is None)
+            self.wipe.draw(self.frame, self.add, self.gpu is None, self.ui)
+        if self.gpu is None:  # the GPU lays the UI over the graded picture itself
+            self.frame.blit(self.ui, (0, 0), special_flags=pygame.BLEND_PREMULTIPLIED)
         self.draw_blade()
 
     def draw_blade(self):

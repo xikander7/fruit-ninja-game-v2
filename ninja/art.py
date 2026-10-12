@@ -17,7 +17,7 @@ SPLASH_GLINT = bytes(min(255, max(0, (v - 222) * 8)) for v in range(256))
 # tinted splashes are cached at the largest size the game ever shows one (watermelon: 2.2 * 56 * 1.2 * 1.25 / 300),
 # and the cache is capped: up to 14 colours x 4 sprites x 24 angles of full-size copies would be hundreds of MB
 SPLASH_SCALE = 0.62
-SPLASH_CACHE = 256
+SPLASH_CACHE = 64  # measured: the same hit rate as 256 in a busy arcade run
 SS = 2  # supersample factor, smoothscaled down for anti-aliasing
 
 
@@ -387,7 +387,10 @@ def _disc(img, d):
 
 
 class FruitArt:
-    """whole, half (cut face at the bottom edge, outward = up), face disc, shadow."""
+    """whole, half, face disc, shadows. `half_local` is the half's outward direction (degrees, maths convention) as
+    drawn: 270 for the sprites (cut face up, rind dome down), 90 / 180 for the procedural fallback. `face` (the cut
+    cross-section) is only kept where something uses it: always on the procedural path (it builds the half), and
+    for watermelon on the sprite path (the window icon); otherwise None."""
 
     def __init__(self, ft):
         self.ft = ft
@@ -455,12 +458,11 @@ class FruitArt:
         self.whole, self.half = whole, half
         # every generated half has the cut face up and the rind dome down -> outward is 270 deg
         self.half_local = 270
-        if ft.name == "watermelon":
+        self.face = None
+        if ft.name == "watermelon":  # the window icon
             hw, hh = half.get_size()
             crop = half.subsurface((0, 0, hw, max(1, int(hh * 0.45)))).copy()
             self.face = _disc(crop, ft.r * 2)
-        else:
-            self.face = _down(_face(ft, int(ft.r * SS * 2)))
         self.shadow = make_shadow(self.whole)
         self.half_shadow = make_shadow(self.half)
         return True
@@ -519,27 +521,6 @@ def make_bomb(r=38):
     img = _down(s)
     tip = ((fuse[-1][0] - c) / SS, (fuse[-1][1] - c) / SS)  # offset from centre, unrotated
     return img, tip, make_shadow(img)
-
-
-def make_stain(color, r, rng):
-    size = int(r * 5)
-    s = pygame.Surface((size, size), pygame.SRCALPHA)
-    c = size / 2
-    col = (*color, 150)
-    pygame.draw.circle(s, col, (c, c), r * 0.75)
-    for _ in range(rng.randint(10, 16)):
-        a, d = rng.uniform(0, math.tau), rng.uniform(0.4, 1.1) * r
-        pygame.draw.circle(s, col, (c + math.cos(a) * d, c + math.sin(a) * d), rng.uniform(0.2, 0.45) * r)
-    for _ in range(rng.randint(10, 20)):
-        a, d = rng.uniform(0, math.tau), rng.uniform(1.2, 2.3) * r
-        pygame.draw.circle(s, col, (c + math.cos(a) * d, c + math.sin(a) * d), rng.uniform(0.04, 0.13) * r)
-    for _ in range(rng.randint(2, 4)):  # drips running down the wall
-        x = c + rng.uniform(-0.6, 0.6) * r
-        L = rng.uniform(0.6, 1.6) * r
-        wdt = rng.uniform(0.07, 0.14) * r
-        pygame.draw.rect(s, col, pygame.Rect(x - wdt / 2, c, wdt, L))
-        pygame.draw.circle(s, col, (x, c + L), wdt * 0.9)
-    return s
 
 
 def _vignette(bg):
@@ -694,8 +675,6 @@ class Art:
         self.fruits = {k: FruitArt(ft) for k, ft in FRUITS.items()}
         self.bomb, self.bomb_tip, self.bomb_shadow = load_bomb() or make_bomb()
         self.bg = load_background() or make_background()
-        rng = random.Random(11)
-        self.stains = {k: [make_stain(ft.juice, ft.r, rng) for _ in range(3)] for k, ft in FRUITS.items()}
         self.frost = make_edge_glow((190, 222, 255), 42, 0.28)  # freeze: cold breath at the edges
         self.ember = make_edge_glow((255, 120, 36), 110, 0.2)  # frenzy: warm glow at the edges
         self._seals = {}
@@ -726,8 +705,8 @@ class Art:
                 img.fill(color, special_flags=pygame.BLEND_RGB_MULT)  # white milk -> juice; the photo's shading stays
                 img.blit(self._glints[i], (0, 0), special_flags=pygame.BLEND_RGB_ADD)
                 img = pygame.transform.smoothscale_by(img, SPLASH_SCALE)
-            if len(self._splash) >= SPLASH_CACHE:  # a miss costs well under a millisecond: just start over
-                self._splash.clear()
+            if len(self._splash) >= SPLASH_CACHE:  # a miss costs well under a millisecond: drop the oldest entry
+                del self._splash[next(iter(self._splash))]
             self._splash[key] = img
         return img
 

@@ -1,7 +1,8 @@
 """GPU post-processing: bloom, lens effects, tonemap, vignette and grain over the CPU-drawn frame.
 
-The game still draws everything with pygame into two 1280x720 surfaces: `base` (the lit scene) and `emissive`
-(glowing things only, black = no glow). PostFX uploads both, blooms them and composites to the window.
+The game still draws everything with pygame into 1280x720 surfaces: `base` (the lit scene), `emissive` (glowing
+things only, black = no glow) and `ui` (HUD and overlays, premultiplied alpha). PostFX uploads them, blooms the
+first two, grades the result and lays the UI over it untouched, so text never warps, fringes or dims with the camera.
 """
 import array
 import math
@@ -94,6 +95,7 @@ COMPOSITE = """
 uniform sampler2D u_base;
 uniform sampler2D u_emissive;
 uniform sampler2D u_bloomtex;
+uniform sampler2D u_ui;
 uniform float u_zoom;
 uniform vec4 u_shock[2];
 uniform float u_aberration;
@@ -117,6 +119,7 @@ float hash(vec2 p) {
 
 void main() {
     vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);  // flip V: textures are stored top row first
+    vec4 ui = texture(u_ui, uv);  // sampled before any warp: the HUD sits on the glass, not in the scene
     uv = 0.5 + (uv - 0.5) / u_zoom;
     for (int i = 0; i < 2; i++) {
         vec4 s = u_shock[i];
@@ -147,7 +150,9 @@ void main() {
 
     col += (hash(gl_FragCoord.xy + fract(u_time) * 97.0) - 0.5) * 0.05;  // grain, amplitude 0.025
     col += u_flash;
-    f_color = vec4(clamp(col, 0.0, 1.0), 1.0);
+    // premultiplied alpha-over; the game clears its UI layer to alpha 1/255 (see UI_CLEAR), which reads as clear
+    float a = max(ui.a - 1.0 / 255.0, 0.0) * (255.0 / 254.0);
+    f_color = vec4(clamp(col, 0.0, 1.0) * (1.0 - a) + ui.rgb, 1.0);
 }
 """
 
@@ -159,13 +164,22 @@ def letterbox(x, y, w, h):
     return x + (w - vw) // 2, y + (h - vh) // 2, vw, vh
 
 
+def to_logical(pos, window_size):
+    """Window pixels -> 1280x720 through the letterbox."""
+    x, y, w, h = letterbox(0, 0, *window_size)
+    return ((pos[0] - x) * W / w, (pos[1] - y) * H / h)
+
+
 class PostFX:
     def __init__(self, ctx=None):
+        self.owns_ctx = ctx is None  # a context we made is ours to release (each F11 toggle makes a new one)
         self.ctx = ctx or moderngl.create_context()
         ctx = self.ctx
         self.vbo = ctx.buffer(array.array("f", [-1, -1, 3, -1, -1, 3]))  # one oversized triangle covers the screen
         self.base = self.texture((W, H), 3, "f1")
         self.emissive = self.texture((W, H), 3, "f1")
+        self.ui = self.texture((W, H), 4, "f1")
+        self.ui_blank = False  # True while the ui texture holds the all-clear upload for callers without a ui layer
         self.downs, self.ups = [], []
         w, h = W // 2, H // 2
         for i in range(LEVELS):
@@ -197,8 +211,9 @@ class PostFX:
             t.use(unit)
         self.vaos[prog].render(moderngl.TRIANGLES, vertices=3)
 
-    def render(self, base, emissive, params, viewport, target=None):
-        """Bloom + composite to the window (or `target`, an offscreen framebuffer used by tests).
+    def render(self, base, emissive, params, viewport, target=None, ui=None):
+        """Bloom + composite to the window (or `target`, an offscreen framebuffer used by tests). `ui` (SRCALPHA,
+        premultiplied, optional) is laid over the graded picture with no post-processing at all.
 
         params (all optional, missing = neutral): zoom (1.0), aberration (0, uv offset per unit of distance from
         centre), saturation (1), flash (0..1 additive white), shocks: up to 2 (cx, cy, radius, strength) with the
@@ -206,6 +221,12 @@ class PostFX:
         """
         self.base.write(pygame.image.tobytes(base, "RGB"))
         self.emissive.write(pygame.image.tobytes(emissive, "RGB"))
+        if ui is not None:
+            self.ui.write(pygame.image.tobytes(ui, "RGBA"))
+            self.ui_blank = False
+        elif not self.ui_blank:
+            self.ui.write(bytes(W * H * 4))
+            self.ui_blank = True
         self.time += 1 / 60
 
         # bloom: prefilter into the first half-res level, then down the chain ...
@@ -224,7 +245,7 @@ class PostFX:
         shocks = list(params.get("shocks", ()))[:2]
         shocks += [(0.0, 0.0, 0.0, 0.0)] * (2 - len(shocks))
         p = self.progs["comp"]
-        self.set("comp", u_base=0, u_emissive=1, u_bloomtex=2,
+        self.set("comp", u_base=0, u_emissive=1, u_bloomtex=2, u_ui=3,
                  u_zoom=float(params.get("zoom", 1.0)), u_aberration=float(params.get("aberration", 0.0)),
                  u_saturation=float(params.get("saturation", 1.0)), u_flash=float(params.get("flash", 0.0)),
                  u_bloom=1.1, u_time=math.fmod(self.time, 1.0))
@@ -238,9 +259,12 @@ class PostFX:
         self.base.use(0)
         self.emissive.use(1)
         self.ups[0].use(2)
+        self.ui.use(3)
         self.vaos["comp"].render(moderngl.TRIANGLES, vertices=3)
 
     def release(self):
         for obj in [*self.vaos.values(), *self.progs.values(), *self.fbos.values(),
-                    self.base, self.emissive, *self.downs, *self.ups, self.vbo]:
+                    self.base, self.emissive, self.ui, *self.downs, *self.ups, self.vbo]:
             obj.release()
+        if self.owns_ctx:
+            self.ctx.release()
