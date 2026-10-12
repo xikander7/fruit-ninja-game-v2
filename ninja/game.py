@@ -8,8 +8,9 @@ import pygame
 from .art import Art, Fonts, FRUITS, REGULAR, WEIGHTS, SPECIALS, _font
 from .audio import Audio
 from .entities import Body, Half, seg_hits_circle, rotate_vec
-from .hud import label, brush_x, chevron, hairline_ring, draw_play_hud
+from .hud import label, brush_x, chevron, hairline_ring, draw_play_hud, draw_grades
 from .powers import KEYS as POWER_KEYS, KI_PER_COMBO, KiMeter, on_cut, tick_power, use_power
+from .fever import Fever, on_cut as fever_cut, tick_fever, fever_fx
 from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade
 from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
@@ -46,10 +47,6 @@ def write_save(data):
         os.replace(tmp, SAVE_PATH)  # atomic: a crash never leaves half a file
     except OSError:
         pass
-
-
-def lerp_rgb(a, b, t):
-    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
 def emit(app, screen, img, pos):
@@ -567,6 +564,7 @@ class Play(Scene):
         self.app, self.mode = app, mode
         self.features = MODE_FEATURES[mode]
         self.ki, self.power, self.last_power = KiMeter() if "powers" in self.features else None, None, "timestop"
+        self.fever = Fever() if "fever" in self.features else None
         self.w = World(app)
         self.score = 0
         self.best_prev = app.save["best"][mode]
@@ -648,6 +646,7 @@ class Play(Scene):
         if b.bomb:
             w.explode(b)
             self.stats["bombs"] += 1
+            self.fever and self.fever.reset()
             if self.mode == "classic":
                 self.state, self.state_t = "dying", 0.0
                 self.app.audio.fuse(False)
@@ -659,15 +658,16 @@ class Play(Scene):
             return
         w.cut(b, *seg)
         on_cut(self, b)  # Ki, and Dragon Fire's ignition
-        mult = 2 if self.double > 0 else 1
-        pts = b.ft.points * mult
-        if self.mode == "arcade" and not b.special and random.random() < 0.06:
-            pts += 10
-            w.popups.add("Critical +10", b.x, b.y - 50, GOLD, True)
+        fever_cut(self)  # the chain grows before the cut is scored: the cut that starts Fever already pays x5
+        crit = self.mode == "arcade" and not b.special and random.random() < 0.06
+        pts = b.ft.points * (2 if self.double > 0 else 1) + 10 * crit
+        pts = self.fever.points(pts) if self.fever else pts
+        if crit:
+            w.popups.add(f"Critical +{self.fever.points(10)}", b.x, b.y - 50, GOLD, True)  # arcade: fever is on
             w.particles.sparks(b.x, b.y, GOLD, 30, 600)
             w.hitstop = max(w.hitstop, 0.06)
         else:
-            w.popups.add(f"+{pts}", b.x, b.y - 30, GOLD if mult > 1 else WASHI)
+            w.popups.add(f"+{pts}", b.x, b.y - 30, GOLD if pts > b.ft.points else WASHI)
         self.add_score(pts)
         self.stats["sliced"] += 1
         self.combo += 1
@@ -696,6 +696,7 @@ class Play(Scene):
     def finish_combo(self):
         if self.combo >= 3:
             bonus = self.combo * (2 if self.double > 0 else 1)
+            bonus = self.fever.points(bonus) if self.fever else bonus
             self.add_score(bonus)
             if self.ki:
                 self.ki.add(KI_PER_COMBO * self.combo)
@@ -712,6 +713,7 @@ class Play(Scene):
 
     def strike(self, b):
         self.stats["missed"] += 1
+        self.fever and self.fever.reset()
         if self.mode in ("classic", "path"):
             self.lose_life(b.x, "drop")
 
@@ -719,6 +721,7 @@ class Play(Scene):
         """A strike (classic) or a lost life (path; `reason` is "drop" or "bomb"): a red brush mark where it happened."""
         if self.state != "play":
             return
+        self.fever and self.fever.reset()
         self.strike_pop[self.strikes] = 0.35
         self.strikes += 1
         self.misses.append([min(max(x, 40), W - 40), 0.0])
@@ -733,7 +736,7 @@ class Play(Scene):
             if e.key in (pygame.K_ESCAPE, pygame.K_p):
                 self.paused = not self.paused
             elif self.paused and e.key == pygame.K_q:
-                self.app.audio.fuse(False)
+                self.app.audio.quiet()
                 self.app.go(lambda: Menu(self.app))
             elif e.key in POWER_KEYS:  # use_power refuses unless playing, unpaused and full
                 self.use_power(POWER_KEYS[e.key])
@@ -756,15 +759,17 @@ class Play(Scene):
             p["saturation"] *= 1 - 0.2 * min(1.0, self.freeze / 0.6)
         if self.power:
             self.power.fx(p)
+        fever_fx(self, p)
         return p
 
     def update(self, dt):
         if self.paused:
-            self.app.audio.fuse(False)
+            self.app.audio.quiet()
             return
         self.pause_bg = None
         w = self.w
         tick_power(self, dt)
+        tick_fever(self, dt)
         # game clock: freeze slows (Time Stop stops) the timer, spawning and difficulty ramp; slow-mo only the world
         wdt = dt * (0.4 if self.freeze > 0 else 1.0) * w.power_scale
         w.update(wdt * w.time_scale(), dt)
@@ -822,7 +827,7 @@ class Play(Scene):
         for b in w.bodies:
             if b.alive and b.gone():
                 b.alive = False
-                if not b.bomb and not b.special and b.entered:
+                if not b.bomb and not b.special and not b.rain and b.entered:
                     self.strike(b)
         w.bodies = [b for b in w.bodies if b.alive]
         # bomb fuses fizz
@@ -846,7 +851,7 @@ class Play(Scene):
         save["best"][self.mode] = max(save["best"][self.mode], self.score)
         save["total_sliced"] += self.stats["sliced"]
         write_save(save)
-        self.app.audio.fuse(False)
+        self.app.audio.quiet()
         snap = self.app.snapshot()
         self.app.go(lambda: GameOver(self.app, self, snap))
 
@@ -886,19 +891,7 @@ class Play(Scene):
             self.draw_pause(screen)
             return
         w.draw(screen, self.draw_world_extra)
-        # power-up grades go under the HUD, never over its text
-        if self.freeze > 0:  # a cold grade that fades in and out with the effect
-            k = min(1.0, self.freeze / 0.6)
-            screen.fill(lerp_rgb((255, 255, 255), (190, 214, 240), k), special_flags=pygame.BLEND_RGB_MULT)
-            self.app.art.frost.set_alpha(int(255 * k))
-            screen.blit(self.app.art.frost, (0, 0))
-        if self.frenzy > 0:  # embers at the edges, breathing slowly
-            k = min(1.0, self.frenzy / 0.5)
-            ember = self.app.art.ember
-            gain = 1.0 if self.app.gpu is None else 0.4  # bloom and additive composite amplify it on the GPU
-            ember.set_alpha(int(255 * gain * k * (0.75 + 0.25 * math.sin(w.t * 5))))
-            # it is light, not paint: on the GPU it goes to the glow layer so the bloom carries it
-            (screen if self.app.gpu is None else self.app.add).blit(ember, (0, 0))
+        draw_grades(self, screen)  # power-up and Fever grades go under the HUD, never over its text
         draw_play_hud(self, self.app.ui)
         w.draw_overlay(screen)
         if self.paused:

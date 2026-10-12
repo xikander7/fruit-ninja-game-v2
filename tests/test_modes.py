@@ -79,3 +79,58 @@ class Modes(unittest.TestCase):
         for mode in ("classic", "zen"):
             app.go(lambda: game.Play(app, mode)); p = app.scene
             self.assertEqual(p.features, set())
+
+    # --- fever ---
+    def cut_n(self, p, n):
+        for _ in range(n):
+            b = p.w.throw("apple", 640, 300, 0, 0)
+            p.hit(b, (590, 300, 690, 300))
+
+    def start(self, mode):
+        app = self.app
+        app.go(lambda: game.Play(app, mode)); p = app.scene; run(app, 80)
+        p.spawn_t = 999
+        return p
+
+    def test_arcade_forty_cuts_start_fever(self):
+        p = self.start("arcade")
+        self.assertIsNotNone(p.fever)
+        self.cut_n(p, 39); self.assertFalse(p.fever.active); self.assertEqual(p.fever.mult, 4)
+        self.cut_n(p, 1); self.assertTrue(p.fever.active)
+        s = p.score; self.cut_n(p, 1)
+        self.assertIn(p.score - s, (5, 55))  # apple 1 point x5 (or a critical: (1 + 10) x5)
+
+    def test_classic_and_zen_have_no_fever(self):
+        for mode in ("classic", "zen"):
+            self.assertIsNone(self.start(mode).fever)
+
+    def test_path_strike_and_bomb_reset_mult(self):
+        p = self.start("path")
+        self.cut_n(p, 25); self.assertEqual(p.fever.mult, 3)
+        p.strike(p.w.throw("apple", 640, 900, 0, 300))
+        self.assertEqual(p.fever.mult, 1)
+        self.cut_n(p, 25); self.assertEqual(p.fever.mult, 3)
+        b = p.w.throw("bomb", 640, 300, 0, 0)
+        p.hit(b, (590, 300, 690, 300))
+        self.assertEqual((p.fever.mult, p.fever.chain), (1, 0))
+
+    def test_rain_fruit_never_cost_lives(self):
+        p = self.start("path")
+        self.cut_n(p, 40); self.assertTrue(p.fever.active)
+        rained = set()
+        for _ in range(240):
+            run(self.app, 1)
+            rained |= {id(b) for b in p.w.bodies if getattr(b, "rain", False)}
+        self.assertGreater(len(rained), 5)
+        self.assertEqual((p.lives, p.stats["missed"]), (3, 0))
+        self.assertTrue(p.fever.active)  # dropped rain never ends the fever either
+
+    def test_time_stop_holds_fever(self):
+        p = self.start("path")
+        self.cut_n(p, 40); run(self.app, 2)
+        p.ki.value = 100; self.assertTrue(p.use_power("timestop"))
+        run(self.app, 30); t = p.fever.t
+        n = len(p.w.bodies)
+        run(self.app, 60)
+        self.assertEqual(p.fever.t, t)
+        self.assertEqual(len(p.w.bodies), n)  # no rain into frozen time

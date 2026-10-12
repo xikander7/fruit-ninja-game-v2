@@ -87,6 +87,17 @@ class AudioTests(unittest.TestCase):
         a.toggle_mute()
         a.toggle_mute()
 
+    def test_loop_with_file_or_one_shot_fallback(self):
+        for d in (None, os.path.join(ROOT, "nope")):  # real drum loop, then the one-shot fallback
+            a = audio.Audio() if d is None else audio.Audio(d)
+            if not a.ok:
+                self.skipTest("no audio device")
+            a.loop("fever", True); a.loop("fever", True)
+            self.assertEqual(a.loop_name, "fever")
+            a.quiet(); self.assertIsNone(a.loop_name)
+            a.loop("fever", True); a.toggle_mute(); a.toggle_mute(); a.loop("fever", False)
+            self.assertIsNone(a.loop_name)
+
 
 if __name__ == "__main__":
     unittest.main()

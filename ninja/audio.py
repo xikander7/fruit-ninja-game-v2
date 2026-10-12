@@ -218,10 +218,12 @@ class Audio:
             return  # no audio device: the game still runs silently
         SR, _, self.channels = pygame.mixer.get_init()
         pygame.mixer.set_num_channels(32)
-        pygame.mixer.set_reserved(2)
+        pygame.mixer.set_reserved(3)
         self.fuse_ch = pygame.mixer.Channel(0)
         self.music_ch = pygame.mixer.Channel(1)
+        self.loop_ch, self.loop_name = pygame.mixer.Channel(2), None  # a held layer (the fever drums)
         self.s = _load_files(folder)
+        self.files = set(self.s)  # names with real recordings: only these are seamless loops
         rng = random.Random(5)
         # Synthesis costs about a second, so each fallback only runs when its files are missing.
         fallback = {
@@ -277,6 +279,28 @@ class Audio:
         elif not on and self.fuse_ch.get_busy():
             self.fuse_ch.stop()
 
+    def loop(self, name, on):
+        """Hold `name` on its own reserved channel while `on` (mirrors fuse). A name with no file of its own has only
+        a one-shot fallback: it plays once as the layer starts, and the music swells for the rest instead."""
+        if not self.ok:
+            return
+        if on and not self.muted and self.loop_name != name:
+            self.loop_name = name
+            looped = name in self.files
+            self.loop_ch.play(random.choice(self.s[name]), loops=-1 if looped else 0, fade_ms=250 if looped else 0)
+            if not looped:
+                self.music_ch.set_volume(0.8)
+        elif not on and self.loop_name == name:
+            self.loop_name = None
+            self.loop_ch.fadeout(400)
+            self.music_ch.set_volume(0.55)
+
+    def quiet(self):
+        """Stop the held layers (fuse and loop): pause, game over, leaving a run."""
+        self.fuse(False)
+        if self.ok and self.loop_name:
+            self.loop(self.loop_name, False)
+
     def start_music(self):
         if self.ok and not self.muted and not self.music_ch.get_busy():
             self.music_ch.play(self.music_snd, loops=-1, fade_ms=1500)
@@ -287,5 +311,6 @@ class Audio:
         if self.ok:
             if self.muted:
                 pygame.mixer.stop()
+                self.loop_name = None
             else:
                 self.start_music()

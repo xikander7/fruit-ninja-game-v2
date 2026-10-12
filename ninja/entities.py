@@ -59,6 +59,7 @@ def flight_time(vy, static):
 
 class Body:
     """A thrown fruit, special banana or bomb."""
+    rain = False  # Fever's rain: dropping one never costs a strike or a life
 
     def __init__(self, art, kind, x, y, vx, vy, static=False):
         self.kind = kind

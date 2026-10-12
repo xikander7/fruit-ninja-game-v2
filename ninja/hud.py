@@ -5,8 +5,13 @@ import pygame
 
 from .art import FRUITS
 from .fx import glow
+from .fever import GRADE as FEVER_GRADE
 from .powers import KI_MAX
 from .settings import W, H, WASHI, GOLD, HANKO, MUTED
+
+
+def lerp_rgb(a, b, t):
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
 def label(surf, fonts, font, s, color, pos, anchor="center", tracking=0, shadow=True, alpha=255):
@@ -145,6 +150,7 @@ def draw_play_hud(play, ui):
             label(ui, f, f.mono12, name, col, (W - 42, y), "midright", tracking=3)
             thin_bar(ui, W - 42 - 140, y + 14, 140, val / total, col, right=True)
             y += 38
+    draw_mult(play, ui, sr)
     pw = play.power
     if pw is not None:  # the running superpower and its time, under the score
         y = sr.bottom + 40
@@ -176,3 +182,63 @@ def draw_ki(play, ui):
         if app.gpu is None:  # the CPU frame already holds the glow layer: add it straight on
             app.frame.blit(g, pos, special_flags=pygame.BLEND_RGB_ADD)
     thin_bar(ui, x, y, KI_W, ki.value / KI_MAX, GOLD, h=3)
+
+
+def draw_mult(play, ui, sr):
+    """The multiplier beside the score: x2..x5 in gold, landing with a small pop each step. During Fever a red
+    seal reads FEVER above it, and a hairline under both runs down with the time left."""
+    fv = play.fever
+    if fv is None or fv.mult < 2:
+        return
+    f = play.app.art.fonts
+    x = sr.right + 16
+    s = f"×{fv.mult}"
+    img, sh = f.text(f.bonus, s, GOLD), f.shadow(f.bonus, s)
+    if fv.pop > 0:
+        k = 1 + 0.35 * fv.pop ** 2
+        img, sh = pygame.transform.smoothscale_by(img, k), pygame.transform.smoothscale_by(sh, k)
+    r = img.get_rect(bottomleft=(x, sr.bottom - 6))
+    sh.set_alpha(230)
+    ui.blit(sh, sh.get_rect(center=(r.centerx, r.centery + 3)))
+    ui.blit(img, r)
+    if not fv.active:
+        return
+    seal = fever_seal(f)
+    sr2 = seal.get_rect(bottomleft=(x + 2, r.top + 4))
+    seal.set_alpha(int(255 * min(1.0, fv.grade() * 1.5)))
+    ui.blit(seal, sr2)
+    thin_bar(ui, x + 2, r.bottom + 4, max(sr2.width, r.width), fv.left(), GOLD)
+
+
+_SEAL = []
+
+
+def fever_seal(f):
+    """FEVER in washi on a hanko-red seal: square-cornered, a touch uneven, like ink pressed onto paper."""
+    if not _SEAL:
+        t = f.text(f.mono12, "FEVER", WASHI, 3)
+        s = pygame.Surface((t.get_width() + 14, t.get_height() + 6), pygame.SRCALPHA)
+        pygame.draw.rect(s, (*HANKO, 235), s.get_rect(), border_radius=2)
+        s.blit(t, t.get_rect(center=(s.get_width() / 2 + 1, s.get_height() / 2)))
+        _SEAL.append(s)
+    return _SEAL[0]
+
+
+def draw_grades(play, screen):
+    """Power-up and Fever grades over the world, under the HUD."""
+    app, w = play.app, play.w
+    if play.freeze > 0:  # a cold grade that fades in and out with the effect
+        k = min(1.0, play.freeze / 0.6)
+        screen.fill(lerp_rgb((255, 255, 255), (190, 214, 240), k), special_flags=pygame.BLEND_RGB_MULT)
+        app.art.frost.set_alpha(int(255 * k))
+        screen.blit(app.art.frost, (0, 0))
+    if play.frenzy > 0:  # embers at the edges, breathing slowly
+        k = min(1.0, play.frenzy / 0.5)
+        ember = app.art.ember
+        gain = 1.0 if app.gpu is None else 0.4  # bloom and additive composite amplify it on the GPU
+        ember.set_alpha(int(255 * gain * k * (0.75 + 0.25 * math.sin(w.t * 5))))
+        # it is light, not paint: on the GPU it goes to the glow layer so the bloom carries it
+        (screen if app.gpu is None else app.add).blit(ember, (0, 0))
+    k = play.fever.grade() if play.fever else 0.0
+    if k > 0:  # Fever's warm gold (the GPU also lifts saturation in its post-fx)
+        screen.fill(lerp_rgb((255, 255, 255), FEVER_GRADE, k), special_flags=pygame.BLEND_RGB_MULT)
