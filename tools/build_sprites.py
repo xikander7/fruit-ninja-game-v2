@@ -13,15 +13,13 @@ sys.path.insert(0, ROOT)
 
 import pygame  # noqa: E402
 
-from ninja.art import FRUITS  # noqa: E402
+from ninja.art import FRUITS, BOSS_R, SHURIKEN_SIZE  # noqa: E402
 from ninja.settings import W, H  # noqa: E402
 
 RAW = os.path.join(ROOT, "assets", "raw")
 OUT = os.path.join(ROOT, "assets", "sprites")
 FILL = 2.35  # longer side of a whole sprite = FILL * r
 BOMB_R = 38
-BOSS_R = 120
-SHURIKEN_SIZE = 64
 EXTRA = {"durian": BOSS_R, "pineapple": BOSS_R, "icebomb": BOMB_R}  # extra whole-only sprites: name -> radius
 SPLASH_SIZE = 300  # longer side of a splash sprite; the game scales it to the fruit
 SPLASH_CROP = {"drops1": 0.72}  # keep the top fraction: drops1's bottom edge is a cut-off pool
@@ -115,6 +113,10 @@ def main():
         print(f"{name}.png", whole.get_size())
         if name + "_half" in manifest:
             half = scale_by(load_trimmed(src(name + "_half")), k)  # same factor as its whole
+            if name == "chaos":  # the raw half is framed tighter than the whole: cap it so it reads as half of the same fruit
+                cap = 1.05 * max(whole.get_size())
+                if max(half.get_size()) > cap:
+                    half = scale_by(half, cap / max(half.get_size()))
             if name == "golden":  # the generated golden half came out as a plain pale apple: same grade as "double"
                 gold_grade(half)
             pygame.image.save(half, os.path.join(OUT, name + "_half.png"))

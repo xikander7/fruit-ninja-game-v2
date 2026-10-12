@@ -145,8 +145,6 @@ class SplashCutTests(unittest.TestCase):
         self.assertLess(abs(crowns / n - 0.25), 0.06)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class NewAssets(unittest.TestCase):
@@ -174,6 +172,11 @@ class NewAssets(unittest.TestCase):
         self.assertTrue(self.art.icebomb.get_flags() & pygame.SRCALPHA)
         self.assertTrue(self.art.icebomb_shadow.get_flags() & pygame.SRCALPHA)
 
+    def test_special_halves_are_not_oversized(self):
+        for k in ("golden", "chaos"):
+            fa = self.art.fruits[k]
+            self.assertLessEqual(max(fa.half.get_size()), 1.15 * max(fa.whole.get_size()), k)
+
     def test_fallbacks_without_sprite_dir(self):
         old = art.SPRITE_DIR
         art.SPRITE_DIR = tempfile.mkdtemp()
@@ -186,3 +189,7 @@ class NewAssets(unittest.TestCase):
             self.assertIsNotNone(a.icebomb_shadow)
         finally:
             art.SPRITE_DIR = old
+
+
+if __name__ == "__main__":
+    unittest.main()

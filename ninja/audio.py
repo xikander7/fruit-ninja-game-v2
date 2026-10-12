@@ -168,6 +168,7 @@ def music(rng):
 
 
 AUDIO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "audio")
+# (boss_hit/boss_roar files are bosshit_N/bossroar_N: the filename regex below allows no underscore in a stem)
 # file prefix -> game sound name (ui clicks double as the quiet "throw" whoosh)
 GROUPS = {"slash": "swoosh", "splat": "splat", "explode": "explode", "fuse": "fuse", "combo": "combo",
           "power": "power", "gong": "gong", "ui": "throw", "miss": "miss", "music": "music",
