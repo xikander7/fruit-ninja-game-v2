@@ -4,7 +4,7 @@ import math
 import pygame
 
 from .art import FRUITS
-from .boss import HP as BOSS_HP, CRACK_AT
+from .boss import HP as BOSS_HP, CRACK_AT, TALLY_HOLD, TALLY_FADE
 from .fx import glow
 from .fever import GRADE as FEVER_GRADE
 from .powers import KI_MAX
@@ -256,6 +256,7 @@ def draw_boss_bar(play, ui):
     if b is None:
         return
     f = play.app.art.fonts
+    draw_boss_tally(b, f, ui)
     a = min(1.0, b.t / 0.4) if b.phase == "rise" else max(0.0, 1 - b.t / 0.5) if b.phase == "escape" else         max(0.0, 1 - b.dead_t / 0.6) if b.phase == "dead" else 1.0
     if a <= 0:
         return
@@ -269,3 +270,26 @@ def draw_boss_bar(play, ui):
         bar.fill((0, 0, 0, 160), (int(BOSS_W * h / BOSS_HP), 0, 1, 4))
     bar.set_alpha(int(255 * a))
     ui.blit(bar, (x, y))
+
+
+def draw_boss_tally(b, f, ui):
+    """One "+N" off the boss's upper right that counts up the current run of hits: it pops on each hit and fades
+    TALLY_FADE s after holding TALLY_HOLD s past the last one (a popup per hit piles into an unreadable heap)."""
+    if not b.tally:
+        return
+    a = min(1.0, (TALLY_HOLD + TALLY_FADE - b.tally_t) / TALLY_FADE)
+    if a <= 0:
+        return
+    s = f"+{b.tally}"
+    img, sh = f.text(f.bonus, s, GOLD), f.shadow(f.bonus, s)
+    pop = max(0.0, 1 - b.tally_t / 0.15)
+    if pop > 0:  # each hit lands with a small swell
+        k = 1 + 0.3 * pop * pop
+        img, sh = pygame.transform.smoothscale_by(img, k), pygame.transform.smoothscale_by(sh, k)
+    x = min(max(b.x + b.r * 0.85, 60), W - 60)
+    y = min(max(b.y - b.r * 0.95, 110), H - 60)
+    r = img.get_rect(midleft=(x, y))
+    sh.set_alpha(int(230 * a))
+    img.set_alpha(int(255 * a))
+    ui.blit(sh, sh.get_rect(center=(r.centerx, r.centery + 3)))
+    ui.blit(img, r)

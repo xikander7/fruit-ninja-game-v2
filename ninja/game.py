@@ -565,7 +565,8 @@ class Play(Scene):
         self.app, self.mode = app, mode
         self.features = MODE_FEATURES[mode]
         self.ki, self.power, self.last_power = KiMeter() if "powers" in self.features else None, None, "timestop"
-        self.fever, self.boss = (Fever() if "fever" in self.features else None), (BossDirector() if "boss" in self.features else None)
+        self.fever = Fever() if "fever" in self.features else None
+        self.boss = BossDirector() if "boss" in self.features else None
         self.w = World(app)
         self.score = 0
         self.best_prev = app.save["best"][mode]
@@ -639,7 +640,7 @@ class Play(Scene):
                 self.next_life += self.life_every
                 if self.strikes > 0:
                     self.strikes -= 1
-                    self.w.popups.add("+1 life", W - 120, 112, GOLD, True)
+                    self.w.popups.add("+1 life", W - 120, 166, GOLD, True)  # rises 54 px: stays clear of the marks
                     self.app.audio.play("life")
 
     def hit(self, b, seg):

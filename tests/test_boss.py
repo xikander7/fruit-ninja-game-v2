@@ -101,3 +101,22 @@ class BossInPlay(unittest.TestCase):
     def test_other_modes_have_no_boss(self):
         for mode in ("classic", "arcade", "zen"):
             self.assertIsNone(game.Play(self.app, mode).boss)
+
+    def test_hits_tally_into_one_counter_and_the_seal_waits_for_the_burst(self):
+        p = self.p
+        p.elapsed = 45.0; run(self.app, 90)
+        boss = p.boss.active
+        pops = len(p.w.popups.items)
+        for i in range(60):
+            self.app.step(DT, [pygame.event.Event(pygame.MOUSEMOTION, pos=(boss.x - 150 + (i % 2) * 300, boss.y), rel=(0, 0), buttons=(0, 0, 0))])
+            if boss.phase == "dead": break
+            if i == 5:
+                self.assertGreaterEqual(boss.tally, 5)
+                self.assertEqual(len(p.w.popups.items), pops)  # no popup per hit
+            run(self.app, 4)
+        self.assertEqual(boss.phase, "dead")
+        kill = p.app.art.seal("討", 140)
+        self.assertFalse(any(s.seal is kill for s in p.w.stamps))  # not on top of the burst
+        run(self.app, 30)
+        seal = [s for s in p.w.stamps if s.seal is kill]
+        self.assertEqual(len(seal), 1)

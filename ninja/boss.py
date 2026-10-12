@@ -16,7 +16,7 @@ from .art import BOSS_R, REGULAR, WEIGHTS, make_shadow
 from .entities import seg_hits_circle
 from .fever import on_cut as fever_cut
 from .fx import glow, shade
-from .settings import W, H, GRAVITY, GOLD, WASHI
+from .settings import W, H, GRAVITY
 
 HP = 30
 RISE, HOVER, ESCAPE = 1.2, 8.0, 1.0  # s per phase
@@ -29,6 +29,8 @@ FLESH = {"durian": (238, 206, 116), "pineapple": (255, 214, 86)}  # juice, chips
 CROWN = {"durian": 0.2, "pineapple": 0.42}  # share of the sprite height above the body (stem, leaves): no cracks there
 SPARK = (255, 228, 184)  # hard rind: hot, pale sparks, like steel on stone
 BONUS = 50
+TALLY_HOLD, TALLY_FADE = 0.6, 0.3  # s the hit counter stays after the last hit, then fades
+STAMP_DELAY = 0.25  # s after the kill: the 討 seal lands once the fruit burst has spread
 
 
 def ease_out(u):
@@ -65,6 +67,8 @@ class Boss:
         self.hit_age, self.hit_dir = 9.0, (1.0, 0.0)  # recoil wobble after a hit
         self.flash = 0.0
         self.halves, self.cut, self.burst = [], None, False
+        self.seal = None  # the defeat stamp's bonus text, until it lands
+        self.tally, self.tally_t = 0, 9.0  # points from the current run of hits (one counter, not a popup each)
         self.dead_t = 0.0
         self._img = {}  # stage -> (sprite with cracks, emissive crack glow or None)
 
@@ -95,6 +99,9 @@ class Boss:
         self.shown = max(float(self.hp), self.shown - dt * 6 * max(1.0, self.shown - self.hp))
         self.flash = max(0.0, self.flash - dt * 10)
         self.hit_age += dt
+        self.tally_t += dt
+        if self.tally and self.tally_t >= TALLY_HOLD + TALLY_FADE:
+            self.tally = 0  # faded out: the next hit starts a fresh count
         if self.phase == "dead":
             self.dead_t += dt
             for h in self.halves:
@@ -336,6 +343,8 @@ def tick_boss(play, dt):
             b.update(dt)
             if b.burst:
                 burst(play, b)
+            if b.seal and b.dead_t >= STAMP_DELAY:
+                seal(play, b)
     if d.leaving is not None and d.leaving.done:
         d.leaving = None
 
@@ -369,7 +378,7 @@ def strike(play, b, seg):
     pts = play.fever.points(1) if play.fever else 1
     play.add_score(pts)
     px, py = closest(seg, b.x, b.y)
-    w.popups.add(f"+{pts}", px + random.uniform(-26, 26), py - 34 + random.uniform(-14, 14), GOLD if pts > 1 else WASHI)
+    b.tally, b.tally_t = b.tally + pts, 0.0  # shown by the HUD as one growing "+N" by the boss
     w.hitstop = max(w.hitstop, 0.03)
     w.shake.kick(0.15)
     w.cut_heat += 0.5
@@ -401,8 +410,16 @@ def defeat(play, b):
     b.burst = True  # the fruit burst comes as the hit-stop lets go (tick_boss), not into the blade still in the cut
     bonus = play.fever.points(BONUS) if play.fever else BONUS
     play.add_score(bonus)
-    w.stamp("討", "Boss down", x, max(150, y - 30), 140, bonus=f"+{bonus}")
+    b.seal = f"+{bonus}"  # the stamp waits for the burst to clear (tick_boss)
     play.app.audio.play("boss_roar")
+
+
+def seal(play, b):
+    """討 where the boss was: by now the burst has flown out past the rim and the halves have parted, so the middle is
+    the one clear spot (below it, the falling lower half crosses the seal). Stamp clamps itself on screen."""
+    x, y = b.cut[:2]
+    play.w.stamp("討", "Boss down", x, y - 20, 140, bonus=b.seal)
+    b.seal = None
 
 
 def burst(play, b):
