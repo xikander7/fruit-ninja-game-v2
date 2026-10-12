@@ -56,6 +56,9 @@ async function boot() {
 }
 
 boot().catch((err) => {
-  $("status").textContent = "Could not start the game: " + err.message;
+  $("status").textContent = "Could not load the game (" + err.message + "). Check your connection and try again.";
+  $("track").hidden = true;
+  $("retry").hidden = false;
+  $("retry").onclick = () => location.reload();
   console.error(err);
 });

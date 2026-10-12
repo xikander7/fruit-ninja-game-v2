@@ -2,6 +2,7 @@
 // on its own audio thread, so a slow frame can never starve it (that was the crackle), and everything passes
 // through one limiter, so a storm of splats, a bomb and the Fever drums add up without clipping.
 import { uniform, choice } from "./util.js";
+import { netPool, retry } from "./net.js";
 
 // Per-name level. Files are peak-normalised to about -1 dBFS, so these bring them into balance; music sits under the effects.
 const LEVEL = {
@@ -84,16 +85,19 @@ export class Audio {
   }
 
   async fetchBuffer(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url}: ${res.status}`);
-    return this.ctx.decodeAudioData(await res.arrayBuffer());
+    const data = await netPool(() => retry(async () => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${url}: ${res.status}`);
+      return res.arrayBuffer();
+    }));
+    return this.ctx.decodeAudioData(data);
   }
 
   /** Load the sound effects (small), then the long loops. `onProgress(done, total)` drives the loading bar. */
   async load(base, onProgress = () => {}) {
     if (!this.ok) return;
     try {
-      const man = await (await fetch(`${base}audio/manifest.json`)).json();
+      const man = await retry(async () => (await fetch(`${base}audio/manifest.json`)).json());
       this.manifest = man;
       const groups = Object.entries(man.groups);
       const jobs = [];

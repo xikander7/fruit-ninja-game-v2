@@ -24,7 +24,7 @@
   #bar { width: 0; height: 100%; background: #e2b65c; transition: width .15s; }
   #status { min-height: 1.2em; margin: 0; font-size: 14px; letter-spacing: .08em; color: #968a78; }
   #buttons { display: flex; flex-direction: column; gap: 12px; align-items: center; }
-  #buttons[hidden] { display: none; }
+  #buttons[hidden], #retry[hidden], #track[hidden] { display: none; }
   button { font: 22px Georgia, "Times New Roman", serif; letter-spacing: .12em; color: #e2b65c; background: #0a0808;
            border: 1px solid #e2b65c; padding: 14px 40px; min-width: 240px; cursor: pointer; }
   button:hover, button:focus-visible { background: #e2b65c; color: #0a0808; outline: none; }
@@ -39,6 +39,7 @@
   <p>THE FRUIT NINJA</p>
   <div id="track"><div id="bar"></div></div>
   <p id="status">Sharpening the blade…</p>
+  <button id="retry" hidden>Try again</button>
   <div id="buttons" hidden>
     <button id="play">Play</button>
     <button id="fs">Play fullscreen</button>

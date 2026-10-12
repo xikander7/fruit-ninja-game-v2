@@ -3,6 +3,7 @@
 import { FRUITS, W, H, HANKO, GOLD } from "./config.js";
 import { gfx, makeCanvas, getCtx, makeShadow, tinted, blurCanvas, polygon, circle } from "./gfx.js";
 import { seeded, rgb, TAU, clamp } from "./util.js";
+import { netPool, retry } from "./net.js";
 
 export const GLYPH_HEX = ["500d", "518d", "51cd", "5d50", "5f71", "5fcd", "623b", "6587", "65ac", "6642", "6975", "6b62", "708e", "71b1",
   "767d", "7985", "7d42", "8a0e", "9006", "901f", "9023", "9053", "9b3c"];
@@ -293,18 +294,18 @@ export function makeEdgeGlow(color, peak, reach, vw, vh) {
 // ---------------- the Art object ----------------
 
 function loadImage(url) {
-  return new Promise((resolve, reject) => {
+  return netPool(() => retry((attempt) => new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error(`could not load ${url}`));
-    img.src = url;
-  });
+    img.src = attempt ? `${url}?retry=${attempt}` : url; // a retry asks for a fresh copy, not the failed one
+  })));
 }
 
 async function loadFonts(base) {
   const faces = Object.entries(FONT_FILES).map(([family, [file, weight]]) => {
     const f = new FontFace(family, `url(${base}fonts/${file})`, { weight });
-    return f.load().then((ff) => { document.fonts.add(ff); }).catch(() => { /* the fallback font covers it */ });
+    return netPool(() => retry(() => f.load())).then((ff) => { document.fonts.add(ff); }).catch(() => { /* the fallback font covers it */ });
   });
   await Promise.all(faces);
 }
