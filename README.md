@@ -1,261 +1,422 @@
 # Hanifa, the Fruit Ninja
 
-A fruit-slicing game written in Python. You move the mouse fast across a fruit to cut it. The game is set on the
-wooden wall of a dojo lit by a paper lantern, with photo-real fruit, juice splashes, red hanko seals for big
-moments and GPU lighting effects. When the menu opens, a watermelon is tossed up and sliced, and the name
-"Hanifa" is written in its juice.
+A fruit-slicing game. You swipe across fruit to cut it. It is set on the wooden wall of a dojo lit by a paper
+lantern, with photographic fruit, juice splashes, red hanko seals for the big moments and glowing light effects. When
+the menu opens, a watermelon is tossed up and sliced, and the name "Hanifa" is written in its juice.
 
-![The menu: "Hanifa, the Fruit Ninja"](docs/screenshot.png)
+![The menu in the browser](docs/web-menu.png)
 
-![Slicing four fruit in one swipe](docs/gameplay.png)
+![Fighting the Durian boss](docs/web-boss.png)
 
-This README is also a guide for learning how the game works. If you are new to the code, read it from top to
-bottom: it explains the language, the libraries, where every file lives and what happens in one frame.
+The game exists in two versions that share the same pictures, sounds and rules:
+
+- a **web version** in JavaScript (folder `web/`), which runs in any browser on a computer, an Android phone or an
+  iPhone;
+- a **desktop version** in Python (folder `ninja/`), which also builds into a Windows `.exe`.
+
+This file is written for someone new to programming. It explains how to play, what each technology is for, what every
+file does and how one frame of the game is made.
+
+## Contents
+
+1. [Play it](#play-it)
+2. [Controls and game modes](#controls-and-game-modes)
+3. [How the project fits together](#how-the-project-fits-together)
+4. [The technologies, in plain words](#the-technologies-in-plain-words)
+5. [Every file and folder](#every-file-and-folder)
+6. [How one frame works](#how-one-frame-works)
+7. [The web version in detail](#the-web-version-in-detail)
+8. [How saving works](#how-saving-works)
+9. [Tests](#tests)
+10. [Try changing something](#try-changing-something)
+11. [Build, run and publish](#build-run-and-publish)
+12. [History of the project](#history-of-the-project)
 
 ---
 
 ## Play it
 
-- **In your browser:** <https://xikander7.github.io/fruit-ninja-game-v2/> (computers and phones: on a phone, tap once and turn it sideways; the game fills the screen)
-- **On Windows:** download `FruitNinjaNightDojo-windows.zip` from the [v4.0 release](https://github.com/xikander7/fruit-ninja-game-v2/releases/tag/v4.0), unzip it and double-click
-  `FruitNinjaNightDojo.exe`. You don't need to install Python.
+- In a browser: <https://xikander7.github.io/fruit-ninja-game-v2/>. It works on computers and phones. On a phone, tap
+  "Tap to play". You can hold the phone sideways or upright, and the game fills the screen either way.
+- On Windows: download `FruitNinjaNightDojo-windows.zip` from the
+  [v4.0 release](https://github.com/xikander7/fruit-ninja-game-v2/releases/tag/v4.0), unzip it and double-click
+  `FruitNinjaNightDojo.exe`. You do not need Python.
+- From the source code (desktop version): you need Python 3.12 or newer.
 
-### The web edition (`web/`)
+  ```
+  pip install -r requirements.txt
+  python main.py
+  ```
 
-The browser version is written in JavaScript (no libraries, no build step) and draws with Canvas2D; the sounds play
-through the Web Audio API. It is a port of the Python game with the same numbers. The old Python-in-the-browser build
-(`tools/build_web.py`, pygbag) is retired: it was too slow on phones, could not fill the window, and its audio crackled.
+- From the source code (web version): see [Build, run and publish](#build-run-and-publish).
 
-```
-python tools/build_web_js.py                 # converts the sounds and copies the art into web/assets/
-python -m http.server 8000 -d web            # then open http://localhost:8000
-node --test "web/tests/*.test.mjs"           # the rules tests
-python tools/deploy_web.py --push            # publish to GitHub Pages
-```
+## Controls and game modes
 
-## Quick start (from the source code)
+There is no clicking to slice. Moving the pointer fast (more than 300 pixels a second) is the blade. A slow drift
+does not cut. On a touch screen, drag your finger across the fruit.
 
-You need Python 3.12 or newer.
-
-```
-pip install -r requirements.txt
-python main.py
-```
-
-There is no clicking to slice. Moving the cursor fast (more than 300 pixels a second) is the blade.
-
-| Where | Key / mouse | What it does |
-|---|---|---|
-| Menu | Slice a fruit, or press `1` `2` `3` `4` | Start Classic, Arcade, Zen or Ninja Path |
-| Menu | `←` `→` (or `A` `D`, or the mouse wheel) | Pick a blade (better best scores unlock more) |
-| Menu | Any key or a fast swipe | Skip the title intro |
-| Playing | `Q` | Time Stop (when the Ki meter is full) |
-| Playing | `W` | Shadow Clones |
-| Playing | `E` | Dragon Fire |
-| Playing | Right click | Use the last power again |
-| Playing | `Esc` or `P` | Pause. While paused, `Q` goes back to the menu |
-| Results | `Enter`, `R` or `Space` / `Esc` | Retry / back to the menu |
-| Anywhere | `M` | Mute or unmute |
-| Anywhere | `F11` | Fullscreen |
-
-## Game modes and features
+| Where | Keyboard or mouse | Touch | What it does |
+|---|---|---|---|
+| Menu | Slice a fruit, or press 1, 2, 3, 4 | Swipe or tap a fruit | Start Classic, Arcade, Zen or Ninja Path |
+| Menu | Left and right arrows (or A, D, or the mouse wheel) | Tap the arrows | Pick a blade. Better best scores unlock more blades |
+| Playing | Q, W, E | Tap a seal beside the Ki bar | Time Stop, Shadow Clones, Dragon Fire (when the Ki bar is full) |
+| Playing | Right click | | Use the last power again |
+| Playing | Esc or P | Pause button | Pause. While paused, Q goes back to the menu |
+| Results | Enter, R or Space / Esc | Slice or tap the fruit | Retry / back to the menu |
+| Anywhere | M | Speaker button | Mute or unmute |
+| Anywhere | F (web), F11 (desktop) | Fullscreen button | Fullscreen |
 
 | Mode | Rules |
 |---|---|
-| Classic | Dropping a fruit is a strike; 3 strikes end the run. A bomb ends it at once. Every 100 points takes one strike back. |
-| Arcade | 60 seconds. Bombs cost 10 points. Power bananas (Freeze, Frenzy, Double score). Ki powers and Fever. |
+| Classic | Dropping a fruit is a strike. Three strikes end the run. A bomb ends it at once. Every 100 points takes one strike back. |
+| Arcade | 60 seconds. Bombs cost 10 points. Power bananas give Freeze, Frenzy or Double score. Ki powers and Fever are on. |
 | Zen | 90 seconds, no bombs. Just slicing. |
-| Ninja Path | Endless, with 3 lives. A dropped fruit or a bomb costs a life. A life comes back every 150 points. Ki powers, Fever, bosses and hazards. |
+| Ninja Path | Endless, with 3 lives. A dropped fruit or a bomb costs a life, and a life comes back every 150 points. Ki powers, Fever, bosses and hazards are on. |
 
-Slicing 3 or more fruit in one swipe is a combo and scores a bonus.
+Slicing three or more fruit in one swipe is a combo and scores a bonus.
 
-**Ki and the three powers** (Arcade and Ninja Path). Every cut fills the Ki meter (`KI_PER_CUT = 4` points; combos
-add more). When it reaches 100 you can spend it:
+Ki and the three powers (Arcade and Ninja Path). Every cut fills the Ki meter by 4 points, and combos add more. At
+100 you can spend it:
 
-- **Time Stop (`Q`)**: the world freezes for 3 seconds. Draw a path through the fruit, then every fruit you touched
-  is cut in order.
-- **Shadow Clones (`W`)**: three ghost blades fly out and cut fruit on their own for 5 seconds. They never hit bombs.
-- **Dragon Fire (`E`)**: for 6 seconds, a fruit you cut bursts into flame and sets every fruit within 140 pixels on
-  fire too.
+- Time Stop: the world freezes for 3 seconds. Draw a path through the fruit, then every fruit you touched is cut in
+  order.
+- Shadow Clones: three ghost blades hunt fruit on their own for 5 seconds. They never hit bombs.
+- Dragon Fire: for 6 seconds a fruit you cut bursts into flame and sets every fruit within 140 pixels on fire too.
 
-**Fever** (Arcade and Ninja Path). Cuts in a row build a score multiplier: x2 after 10, up to x5. At x5 the dojo
-goes gold for 8 seconds and fruit rains down. A strike or a bomb resets the chain.
+Fever (Arcade and Ninja Path). Cuts in a row build a score multiplier: x2 after 10 cuts, up to x5. At x5 the dojo
+turns gold for 8 seconds and fruit rains down. A strike or a bomb resets the chain.
 
-**Bosses** (Ninja Path). After 45 seconds a Durian rises out of the dark, later a Pineapple King. Each takes 30 hits
-before it splits open. If you are too slow it escapes.
+Bosses (Ninja Path). After 45 seconds a Durian rises out of the dark. Later comes a Pineapple King. Each takes 30
+hits before it splits open, and if you are too slow it escapes.
 
-**Hazards and special fruit** (Ninja Path, after 20 seconds):
+Hazards and special fruit (Ninja Path, after 20 seconds):
 
-- **Shuriken**: a throwing star flies at the screen. If it hits you, you lose a life. Slice it fast to knock it away.
-- **Ice bomb**: slicing it freezes your blade for 2 seconds.
-- **Golden fruit**: takes 5 hits, 5 points each, plus a bonus of 25 when it breaks.
-- **Chaos fruit**: flips gravity upside down for 5 seconds, so fruit fall up.
+- Shuriken: a throwing star flies at your pointer. If it hits, you lose a life. Slice it fast to knock it away.
+- Ice bomb: slicing it freezes your blade for 2 seconds.
+- Golden fruit: it takes 5 hits, worth 5 points each, plus 25 when it breaks.
+- Chaos fruit: gravity flips upside down for 5 seconds, so fruit fall upward.
 
 ---
 
-## The language and technologies
+## How the project fits together
 
-### Python
+```
+                 assets/  (sprites, sounds, fonts, kanji stencils)
+                    |
+        +-----------+-----------+
+        |                       |
+   ninja/ (Python)        tools/build_web_js.py
+   desktop game           converts sounds, copies art
+        |                       |
+   main.py                 web/assets/  (not stored in git)
+   PyInstaller                  |
+        |                  web/ (JavaScript)
+   Windows .exe            browser game
+                                |
+                       tools/deploy_web.py
+                                |
+                       GitHub Pages (gh-pages branch)
+```
 
-The game is written in **Python**, a programming language that reads almost like English and doesn't need a
-separate compile step. You run a file with `python main.py`.
+Both versions follow the same rules and use the same numbers (gravity 1250, slice speed 300 px/s, 30 boss hits and
+so on). The Python code in `ninja/` is the reference. The JavaScript code in `web/src/` is a port of it. The numbers
+live in two places, so if you change a rule in one version, change it in the other too.
 
-- A **module** is one `.py` file. Other files can `import` what it defines.
-- A **package** is a folder of modules. Here `ninja/` is a package, so `from ninja.game import App` works.
-- A **class** is a blueprint for objects that keep their own data and functions (methods). For example, `Body` is
-  one fruit flying through the air, and `Menu` is the menu screen.
-- A **function** is a named piece of code you can call, such as `load_save()`.
-- A **constant** is a value that is set once at the top of a file and written in CAPITALS, like `GRAVITY`.
+Why two versions? Browsers run JavaScript natively and draw with the graphics card. Python can only run in a browser
+if the whole Python interpreter is shipped to the page, and in that form the game was too slow on phones, could not
+fill the window and had crackling sound. So the web version is plain JavaScript, and the Python version stays as a
+desktop game.
 
-*Why Python:* it is quick to write and easy to read, so it is a good language for learning how a game is built.
+---
+
+## The technologies, in plain words
+
+### Python (desktop version)
+
+Python is a programming language that reads close to English and runs without a separate compile step.
+
+- A module is one `.py` file. Other files can `import` things from it.
+- A package is a folder of modules. `ninja/` is a package, so `from ninja.game import App` works.
+- A class is a blueprint for objects that hold their own data and functions. `Body` is one fruit flying through the
+  air, and `Menu` is the menu screen.
+- A constant is a value set once at the top of a file and written in capitals, like `GRAVITY`.
 
 ### pygame-ce
 
-**pygame-ce** (the community edition of pygame) gives Python a window, a keyboard and mouse, sound and 2D drawing.
+pygame-ce gives Python a window, keyboard and mouse, sound and 2D drawing. A surface is an image in memory you can
+draw on. The screen is a surface and so is every sprite. Events are things that happened since the last frame, such
+as a mouse movement. The game loop runs about 120 times a second: read events, update the world, draw it, show it.
 
-- The **window** is opened once with `pygame.display.set_mode`.
-- A **surface** is an image in memory you can draw on. The screen is a surface, and so is every sprite.
-- **Events** are things that happened since the last frame, such as the mouse moving or a key being pressed.
-  `pygame.event.get()` hands you the list.
-- The **game loop** runs about 120 times a second: read events, update the world, draw it and show it.
+### moderngl, OpenGL and GLSL
 
-*Why pygame-ce:* it is the most widely used way to make 2D games in Python, it is free, and it runs on Windows,
-macOS, Linux and (through pygbag) in the browser.
+A graphics card can run small programs, called shaders, on every pixel at once. They are written in GLSL, and
+moderngl sends them to the card through OpenGL. The desktop version draws on the CPU first, then a shader in
+`ninja/gpu.py` adds bloom (bright things glow), a darker vignette, colour fringing when a bomb goes off, shockwaves,
+zoom punches and film grain. Without a suitable graphics card the game falls back to a CPU version of the look. You
+can force that with the environment variable `NINJA_NO_GPU=1`.
 
-### moderngl, OpenGL and GLSL shaders
+### JavaScript, HTML and ES modules (web version)
 
-Your graphics card (GPU) can run small programs called **shaders** on every pixel at the same time. They are written
-in **GLSL**, a C-like language, and **moderngl** lets Python send them to the GPU through **OpenGL**.
+JavaScript is the language browsers run. HTML describes the page, and `web/index.html` is a loading screen, a canvas
+and a script tag. The code is split into ES modules: each file starts with `import` lines naming what it needs and
+exports what others may use. There is no build step and no npm install. The browser loads the files as they are.
 
-The game draws everything on the CPU first and then hands the finished picture to a shader in `ninja/gpu.py`
-that adds:
+### Canvas 2D
 
-- **bloom**: bright things (the blade, sparks, fire) glow and bleed light into their surroundings;
-- **vignette**: the corners get slightly darker, so your eye goes to the middle;
-- **chromatic aberration**: red, green and blue shift apart a little, like a cheap lens, when a bomb goes off;
-- shockwaves, zoom punches on combos, colour grades for slow motion, film grain.
+A `<canvas>` is a rectangle of pixels you draw on from JavaScript, much like a pygame surface. The web version draws
+into several canvases (the world, the glow, the interface) and lays them on top of each other. Adding light is done
+with the "lighter" blend mode, which is the same as pygame's additive blit.
 
-*Why:* these effects would be far too slow pixel by pixel in Python, but they are almost free on a GPU. If there is
-no GPU (or in the browser), the game falls back to a CPU renderer that looks nearly the same. You can force the
-fallback with the environment variable `NINJA_NO_GPU=1`.
+### Web Audio
 
-### unittest
+The Web Audio API mixes sound on its own thread, separate from the game. A slow frame cannot starve it, which is what
+caused the crackle in the old browser build. All sound goes through one limiter so a pile of splats, a bomb and the
+Fever drums never add up past full volume.
 
-**unittest** is Python's built-in testing library. A test is a small function that sets something up and checks
-the result with `assertEqual`, `assertTrue` and so on. *Why:* tests catch it straight away when a change breaks a
-rule of the game. See [Tests](#tests).
+### Node test runner, unittest, pytest
 
-### Dev tools: numpy, PyInstaller, pygbag
+A test is a small function that sets something up and checks the result. The Python tests use `unittest` (run with
+pytest). The JavaScript rules tests use the test runner built into Node.js (`node --test`).
 
-These are only needed for building things, not for playing. They are listed in `requirements-dev.txt`.
+### PyInstaller
 
-- **numpy** does fast maths on big arrays of numbers. `tools/build_audio.py` and `tools/build_web.py` use it to
-  process sound files.
-- **PyInstaller** packs Python, pygame and the game into a folder with a `.exe`, so Windows users don't need Python.
-- **pygbag** packs the game for the web. It runs real Python compiled to **WebAssembly** inside the browser.
+PyInstaller packs Python, pygame and the game into a folder with a `.exe`, so Windows users do not need Python.
 
-### OFL fonts
+### GitHub Pages
 
-The fonts are **Cormorant SC** (titles), **Barlow Condensed** (numbers) and **IBM Plex Mono** (small labels). They
-are under the **SIL Open Font License (OFL)**, which allows you to bundle them with a game. The licence files are in
-`assets/fonts/`. The kanji on the seals come from your system's Japanese font, or from stencils made from **Zen
-Kaku Gothic New** (also OFL) in `assets/glyphs/` when there isn't one.
+GitHub Pages serves a folder of static files from the `gh-pages` branch. The web game needs nothing else, because all
+the work happens in the player's browser.
+
+### numpy
+
+numpy does fast maths on large arrays. The build tools use it to process sound files.
+
+### Fonts
+
+Cormorant SC (titles), Barlow Condensed (numbers) and IBM Plex Mono (small labels) are under the SIL Open Font
+License, which allows bundling them with a game. The licences are in `assets/fonts/`. The kanji on the seals are
+stencils in `assets/glyphs/`, made from Zen Kaku Gothic New (also OFL).
 
 ---
 
-## Folder and file map
+## Every file and folder
 
 ```
 fruit-ninja-game-v2/
-├── main.py                 Starts the game: desktop loop, browser (async) loop, NINJA_SMOKE test mode
-├── requirements.txt        What the game needs: pygame-ce, moderngl
-├── requirements-dev.txt    Extra tools for building: numpy, pyinstaller, pygbag
-├── ninja/                  The game itself (a Python package)
-│   ├── settings.py         Screen size, GRAVITY, colours, BLADES, MODES, TITLE, resource_path(), save location
-│   ├── game.py             The App (window + loop) and the scenes: World, Menu, Play, GameOver, Wipe; saving
-│   ├── title.py            The menu's title intro: the tossed watermelon and the "Hanifa" signature
-│   ├── entities.py         Body (a whole fruit or bomb) and Half (a cut half): movement and drawing
-│   ├── art.py              Loads sprites and fonts, draws fallback art, makes hanko seals
-│   ├── audio.py            Loads sounds (or synthesizes them if missing) and plays them
-│   ├── fx.py               Juice particles, stains, the blade trail, screen shake, score popups, seal stamps
-│   ├── gpu.py              PostFX: the GLSL shaders for bloom, vignette, aberration, shockwaves, grain
-│   ├── hud.py              The heads-up display: score, timer, strikes/lives, Ki meter, multiplier, boss bar
-│   ├── powers.py           The Ki meter and the three powers: TimeStop, ShadowClones, DragonFire
-│   ├── fever.py            The cut chain, the score multiplier and the fruit rain
-│   ├── boss.py             Boss (Durian, Pineapple King) and BossDirector (when one appears)
-│   └── hazards.py          Shuriken, ice bomb, golden fruit, chaos fruit
-├── tests/                  Automatic checks (see Tests below)
-├── tools/
-│   ├── build_sprites.py    Turns raw source images (assets/raw, not in git) into game sprites
-│   ├── build_audio.py      Turns raw source audio into game-ready WAV files
-│   ├── build_glyphs.py     Renders the kanji stencils in assets/glyphs from an OFL font
-│   ├── build_windows.py    Builds the Windows edition with PyInstaller
-│   └── build_web.py        Builds the browser edition with pygbag
-├── assets/
-│   ├── sprites/            Fruit, halves, bomb, bosses, hazards, juice splashes, background.jpg
-│   ├── audio/              Sound effects and music (WAV)
-│   ├── fonts/              The three OFL fonts and their licences
-│   └── glyphs/             Kanji stencils for the seals (used when there is no Japanese system font)
-├── docs/
-│   ├── screenshot.png      The menu (shown at the top of this file)
-│   ├── gameplay.png        A four-fruit combo
-│   ├── plans/              Older implementation plans
-├── index.html, script.js, style.css   The original browser game (HTML + JavaScript) from the main branch
-└── .gitignore              Keeps build output (build/, dist/) and raw assets out of git
+├── README.md               This file
+├── main.py                 Starts the desktop game (and the NINJA_SMOKE=1 self-check)
+├── requirements.txt        What the desktop game needs: pygame-ce, moderngl
+├── requirements-dev.txt    Build tools: numpy, pyinstaller
+├── .gitignore, .gitattributes
+├── assets/                 Shared by both versions
+├── ninja/                  The desktop game (Python package)
+├── tests/                  Python tests
+├── tools/                  Scripts that build assets and releases
+├── web/                    The web game (JavaScript)
+└── docs/                   Screenshots used by this file
 ```
+
+### assets/
+
+| Folder | What is in it |
+|---|---|
+| `sprites/` | One PNG per fruit, one per cut half (`apple_half.png`), the bomb, ice bomb, shuriken, the Durian and Pineapple King, four juice splash photos, and `background.jpg` (the dojo wall) |
+| `audio/` | Sound effects and music as WAV files. Names look like `splat1_3.wav`: the letters say which sound, the last number is the variation |
+| `fonts/` | The three fonts and their licence files |
+| `glyphs/` | One PNG per kanji character used on the seals, named by the character's hex code (`65ac.png` is the character 斬) |
+
+`assets/raw/` holds the unprocessed source files. It is not stored in git.
+
+### ninja/ (desktop game)
+
+| File | What it does |
+|---|---|
+| `settings.py` | Screen size, gravity, colours, the blades and modes tables, where the save file lives, `resource_path()` for finding files inside the `.exe` |
+| `game.py` | `App` (window and main loop) and the screens: `World`, `Menu`, `Play`, `GameOver`, `Wipe` (the cut-in-two transition). Also loading and writing the save |
+| `title.py` | The title intro: the tossed watermelon and the "Hanifa" signature |
+| `entities.py` | `Body` (a whole fruit or bomb) and `Half` (a cut half): movement and drawing |
+| `art.py` | Loads sprites and fonts, draws fallback art if a file is missing, makes the hanko seals |
+| `audio.py` | Loads sounds (or makes simple ones in code if a file is missing) and plays them |
+| `fx.py` | Juice particles, stains on the wall, the blade trail, screen shake, score popups, seal stamps |
+| `gpu.py` | The GLSL shaders for bloom, vignette, colour fringing, shockwaves and grain |
+| `hud.py` | Score, timer, strikes and lives, Ki meter, multiplier, boss bar |
+| `powers.py` | The Ki meter and the three powers |
+| `fever.py` | The cut chain, the multiplier and the fruit rain |
+| `boss.py` | `Boss` (Durian, Pineapple King) and `BossDirector` (decides when one appears) |
+| `hazards.py` | Shuriken, ice bomb, golden fruit, chaos fruit |
+
+### tests/ (Python)
+
+One test file per area: `test_game.py` (slicing maths, a scripted run through every screen), `test_modes.py`,
+`test_powers.py`, `test_fever.py`, `test_boss.py`, `test_hazards.py`, `test_fx.py`, `test_gpu.py` (skips itself
+without OpenGL), `test_art.py`, `test_audio.py`, `test_ui.py`, `test_package.py`.
+
+### tools/
+
+| File | What it does |
+|---|---|
+| `build_sprites.py` | Turns the raw cutouts in `assets/raw` into the game sprites |
+| `build_audio.py` | Splits and trims the raw audio into game-ready WAV files |
+| `build_glyphs.py` | Renders the kanji stencils from an OFL font |
+| `build_windows.py` | Builds the Windows edition with PyInstaller |
+| `build_web_js.py` | Builds `web/assets/`: converts the sounds to 22 kHz mono, copies sprites, fonts and glyphs, writes the sound list |
+| `deploy_web.py` | Builds the site into `build/site` and, with `--push`, publishes it to the `gh-pages` branch |
+
+### web/ (web game)
+
+The page and the tests:
+
+| File | What it does |
+|---|---|
+| `index.html` | The page: loading screen with a progress bar, the Play buttons, the game canvas, and the CSS that centres and scales it |
+| `package.json` | Only says "treat .js files as ES modules" so Node can run the tests |
+| `favicon.png` | The tab icon |
+| `tests/rules.test.mjs` | The rules tests |
+| `assets/` | Built by `tools/build_web_js.py`. Not stored in git |
+
+The rules, in `web/src/rules/`. These files have no drawing code, so Node can test them:
+
+| File | What it does |
+|---|---|
+| `collide.js` | Does a swipe segment touch a circle, rotating a point, how big a thrown fruit looks at the top of its arc |
+| `fever.js` | The chain, the x1 to x5 multiplier, the 8 second Fever and its fruit rain |
+| `ki.js` | The Ki meter |
+| `boss.js` | The boss: 30 hit points, rise, hover and escape phases, crack stages, and when the next boss appears |
+| `hazards.js` | The hazard odds, the shuriken's flight and how a parry bounces it, and constants for ice and golden fruit |
+| `save.js` | Reading and writing the save, with fallbacks for missing or broken data |
+
+The game, in `web/src/`:
+
+| File | What it does |
+|---|---|
+| `main.js` | Loads everything with a progress bar, waits for the first tap (browsers keep sound locked until then), starts the frame loop |
+| `net.js` | Loads files six at a time and retries a failed one, so a weak phone connection does not stop the game |
+| `config.js` | Sizes, colours, the fruit table, modes, blades. The `VIEW` object records the visible area |
+| `util.js` | Random-number helpers, colour helpers, a seeded random generator |
+| `gfx.js` | Drawing helpers: rotated sprites, cached glow images, shadows, blur, curve smoothing |
+| `assets.js` | Loads sprites, fonts and glyphs. Builds shadows, juice-tinted splashes, the hanko seals, the wall with its vignette, the text cache |
+| `ui.js` | Small helpers for placing text and drawing labels and bars |
+| `input.js` | Turns mouse, touch and keyboard events into a simple list of events with stage coordinates |
+| `audio.js` | The Web Audio mixer: loading, one music voice, sound effects, the limiter |
+| `app.js` | The window, the layers, input to slicing, the frame loop, scene changes, fullscreen |
+| `world.js` | The world: fruit, halves, particles, stains, shake, slow motion, the cut and bomb effects |
+| `entities.js` | `Body` and `Half`: a thrown fruit and a cut half |
+| `fx.js` | Particles, juice stains, blade trail, screen shake, score popups, seal stamps |
+| `menu.js` | The menu, plus `SliceButton`, the fruit you cut to choose |
+| `play.js` | A run: spawning waves, scoring, combos, strikes, the clock, pause |
+| `gameover.js` | The results screen |
+| `hud.js` | Score, timer, strikes, Ki bar and power seals, the colour grades over the world, the on-screen buttons |
+| `powers.js` | Time Stop, Shadow Clones, Dragon Fire |
+| `fever.js` | How Fever plugs into a run |
+| `boss.js` | How a boss looks (sprite, cracks, split halves) and how it plugs into a run |
+| `hazards.js` | How hazards plug into a run and how they are drawn |
+| `title.js` | The title intro |
+| `wipe.js` | The transition that cuts the screen in two |
 
 ---
 
 ## How one frame works
 
-About 120 times a second, `App.frame_step()` in `ninja/game.py` runs one frame:
+### Desktop version
 
-1. **Input.** `App.step` reads the events. Every mouse movement adds a point to the blade's path. If the cursor
-   moved faster than `SLICE_SPEED` (300 px/s), the path between those points becomes **slicing segments**: short
-   lines that cut anything they cross.
-2. **Update.** The current scene's `update(dt)` runs (`dt` is the time since the last frame, in seconds). In
-   `Play.update`, the **world** moves every fruit (gravity pulls them down), then the hooks run:
-   **powers** (`tick_power`), **fever** (`tick_fever`), the **boss** (`tick_boss`) and **hazards**
-   (`tick_hazards`). `Play.slice` checks every segment against every fruit (`seg_hits_circle`) and cuts what it hits.
-3. **Draw.** The scene draws into three layers:
-   - `app.frame`: the world (wall, fruit, halves, juice, stains);
-   - `app.add`: things that **glow** (blade, sparks, fire), added on top as light;
-   - `app.ui`: text and the HUD, which must stay sharp and never be bent by effects.
-4. **Post-processing.** With a GPU, `PostFX.render` in `ninja/gpu.py` combines `frame` and `add`, applies bloom,
-   vignette, aberration and so on, and then lays `ui` over the top. Without a GPU, the layers are just blended
-   together on the CPU.
-5. **Screen.** `pygame.display.flip()` shows the finished picture.
+About 120 times a second `App.frame_step()` in `ninja/game.py` runs one frame:
+
+1. Input. `App.step` reads the events. Each mouse movement adds a point to the blade's path. If the pointer moved
+   faster than 300 px/s, the path becomes slicing segments: short lines that cut anything they cross.
+2. Update. The current screen's `update(dt)` runs, where `dt` is the time since the last frame in seconds. In a run,
+   the world moves every fruit (gravity pulls them down), then powers, fever, the boss and hazards each get a turn,
+   and `Play.slice` checks every segment against every fruit.
+3. Draw. The screen draws into three layers: the world, the glow (light that gets added on top) and the interface
+   (text that must stay sharp).
+4. Post-processing. With a graphics card, `PostFX.render` blends the layers, applies bloom and the other effects, and
+   lays the interface on top. Without one, the layers are blended on the CPU.
+5. Show. `pygame.display.flip()` puts the picture on screen.
+
+### Web version
+
+`requestAnimationFrame` in `web/src/main.js` calls `app.frameStep()` once per screen refresh (60 times a second on
+most screens). The steps match the desktop version:
+
+1. `input.js` has been collecting events all the time. `App.step` turns the pointer movements into slicing segments
+   with the same 300 px/s rule.
+2. The current scene's `update(dt)` runs. `dt` is capped at 1/20 s so a stalled tab cannot make fruit jump.
+3. The scene's `draw()` fills three canvases: `L` (the world), `add` (glow, black means no glow) and `ui`.
+4. `App.compose()` stacks them on the visible canvas. The world and glow get the camera: zoom for combo punches,
+   shake for bombs. The glow is also blurred by shrinking it in steps and adding it back, which gives the bloom. The
+   colour drain (slow motion, Time Stop) is a grey layer in the "saturation" blend mode. Then come the scene's colour
+   grades (frost, embers, Fever gold), the flash, the interface canvas, the scene-change wipe and the blade.
 
 ```
- mouse / keys
-      |
-      v
- App.step ---- fast movement? ----> slicing segments
-      |                                   |
-      v                                   v
- scene.update(dt)   Play: world moves, powers, fever, boss, hazards, slice
-      |
-      v
- scene.draw
-   +-- app.frame  (world: wall, fruit, juice)
-   +-- app.add    (glow: blade, sparks, fire)
-   +-- app.ui     (HUD, text)
-      |
-      v
- GPU: PostFX.render  (bloom, vignette, aberration, then UI on top)
-   or CPU: blend the layers
-      |
-      v
- pygame.display.flip()  ->  screen
+ pointer / touch / keys
+        |
+   input.js  -> events
+        |
+   App.step  -> slicing segments (speed > 300 px/s)
+        |
+   scene.update(dt)     run: waves, fruit move, powers, fever, boss, hazards, cuts
+        |
+   scene.draw()  ->  L (world)   add (glow)   ui (text, HUD)
+        |
+   App.compose():  camera + bloom + colour drain + grades + flash + ui + wipe + blade
+        |
+   visible <canvas>
 ```
+
+---
+
+## The web version in detail
+
+### The stage and the view
+
+All game rules work on a fixed stage of 1280 by 720 units. The window is almost never exactly that shape, so
+`App.resize()` works out a view: the stage plus extra wall around it. A wide window shows more wall left and right, a
+tall one shows more above and below, within limits. The dojo wall image is stretched to cover the whole view, so
+there are no black bars on a laptop or a phone. `VIEW` in `config.js` stores the size and the offset of the stage
+inside the view, and every layer is drawn with that offset applied. Things that must start off screen (a shuriken,
+Frenzy fruit) use the view's edges, so they do not pop in mid-screen on a wide display.
+
+### Phones
+
+- Touch: a finger is the blade. A new touch never cuts a line from where the last one ended. Only the first finger
+  counts.
+- Fullscreen and landscape: tapping Play on a touch device asks the browser for fullscreen and tries to lock the
+  screen to landscape. Some browsers refuse (iPhone Safari has no fullscreen for pages), and the page still fills the
+  screen.
+- Upright phones: if the phone is held upright and rotation is locked, `App.resize()` draws the game turned a quarter
+  turn so it still fills the screen, and `input.js` turns touch positions back.
+- Buttons: pause, mute and fullscreen are drawn on screen. Seals for the three powers appear next to the Ki bar when
+  it is full.
+- Slow phones: `App.adapt()` watches the frame time. If frames stay slow, it turns the glow down a step, then off,
+  and lowers the particle limit.
+
+### Sound
+
+`audio.js` builds this chain: every sound effect goes to the effects bus, the music goes to the music bus, both go
+through a master volume, then a compressor that acts as a limiter, then a soft clipper that stops anything from
+passing full scale, and finally the speakers. Other rules in the file:
+
+- There is only ever one music voice, however many times `startMusic()` is called.
+- Each sound has a cap on how many copies can play at once (for example 5 splats), and the whole mixer is capped at
+  16 voices.
+- While the Fever drums play, the music steps back a little so the two do not blur together.
+- The sound files are converted to 22 kHz mono by `tools/build_web_js.py` with a proper low-pass filter, which keeps
+  the download near 9 MB.
+- The long loops (music, Fever drums, bomb fuse) load after the menu is showing, so the game starts sooner.
+
+### Loading
+
+`main.js` loads sprites, fonts, glyphs and sounds while the progress bar fills. Files go through `net.js`: six at a
+time, each retried up to four times with a growing wait. If loading still fails, the page shows the error and a "Try
+again" button. Sound stays locked in browsers until a tap, which is why there is a Play button at all.
 
 ---
 
 ## How saving works
 
-Your scores are saved in a small JSON text file in your home folder: `~/.fruit_ninja_dojo.json` (on Windows
-that's `C:\Users\<you>\.fruit_ninja_dojo.json`). `load_save()` and `write_save()` in `ninja/game.py` read and
-write it. It looks like this:
+Scores are saved as a small piece of JSON.
+
+- Desktop: in `~/.fruit_ninja_dojo.json` in your home folder.
+- Web: in the browser's local storage, under the key `hanifa-fruit-ninja-save`.
 
 ```json
 {
@@ -266,96 +427,104 @@ write it. It looks like this:
 }
 ```
 
-- `best`: your best score in each mode (these unlock blades);
-- `blade`: the blade you picked;
-- `muted`: whether sound is off;
-- `total_sliced`: every fruit you have ever cut.
-
-The file is written to a temporary file first and then swapped in, so a crash never leaves half a save. A missing
-or broken file just starts you fresh. In the browser edition the save is also kept in the browser's local storage.
+`best` holds your best score in each mode (these unlock blades), `blade` is the one you picked, `muted` is whether
+sound is off and `total_sliced` counts every fruit you have cut. A missing or broken save just starts you fresh. The
+desktop version writes to a temporary file first and swaps it in, so a crash never leaves half a save. In the web
+version, `rules/save.js` does the loading and checking, and a blocked or full storage never crashes the game.
 
 ---
 
 ## Tests
 
+Python (desktop version):
+
 ```
-python -m unittest discover -s tests -v
+python -m pytest tests
 ```
 
-The tests run without opening a window (they use SDL's "dummy" video driver and the CPU renderer), so they work
-anywhere. The GPU tests make a hidden OpenGL context and skip themselves if there isn't one.
+These run without a window (SDL's dummy video driver and the CPU renderer). The shader tests make a hidden OpenGL
+context and skip themselves if there is none.
 
-| File | What it checks |
-|---|---|
-| `tests/test_game.py` | The slicing maths, slow drift doesn't cut, a full scripted run through every screen, corrupt saves |
-| `tests/test_modes.py` | Which systems each mode runs, Ninja Path lives and bombs, Fever in each mode, old saves still load |
-| `tests/test_powers.py` | Ki filling and spending, each power's rules, powers refused while paused or not full |
-| `tests/test_fever.py` | Multiplier steps, Fever starting at x5, resets, fruit rain |
-| `tests/test_boss.py` | Boss hits, cooldown, escape, timing, game over with a boss on screen |
-| `tests/test_hazards.py` | Shuriken hits and parries, ice bomb freeze, golden fruit hits, chaos gravity |
-| `tests/test_fx.py` | Blade smoothing, effects fading back to normal, slow motion |
-| `tests/test_gpu.py` | The shaders: bloom, zoom, shockwaves, the UI layer staying untouched |
-| `tests/test_art.py` | Sprites load with transparency, fallbacks when files are missing, juice splashes |
-| `tests/test_audio.py` | Every sound is found, and synthesized fallbacks when files are missing |
-| `tests/test_ui.py` | Every screen draws, the title intro settles and can be skipped, fonts fall back |
-| `tests/test_package.py` | The Windows and browser editions find their files, the frame step, kanji stencils |
+JavaScript (web version):
+
+```
+node --test "web/tests/*.test.mjs"
+```
+
+They cover the rules: whether a swipe touches a circle, the Fever steps and rain, the Ki meter, saves (valid, corrupt,
+and storage that throws), the boss (30 hits, the hit cooldown, crack stages, appearing every 45 seconds) and the
+shuriken (flight, parry, leaving the screen).
+
+Drawing and sound are checked by running the page in a real browser and looking at screenshots, not by unit tests.
 
 ---
 
-## Try changing this
+## Try changing something
 
-Small, safe experiments. Change one value, run `python main.py` and see what happens. Undo with `git checkout -- .`
+Change one value, run the game, see what happens. Undo with `git checkout -- .`
 
-1. **Moon gravity.** In `ninja/settings.py`, set `GRAVITY = 1250.0` to `600.0`. Fruit float up higher and fall slowly.
-2. **Faster Ki.** In `ninja/powers.py`, raise `KI_PER_CUT = 4` to `20`. You can use a power after about five cuts.
-3. **A tougher boss.** In `ninja/boss.py`, change `HP = 30` to `60`. (Keep it above the crack points in `CRACK_AT`.)
-4. **Your own blade colours.** In `ninja/settings.py`, find `BLADES` and change the three colours of `"Moonlight"`
-   (outer glow, middle, core), for example to `(0, 120, 40), (80, 255, 120), (230, 255, 230)` for a green blade.
-5. **A longer Fever.** In `ninja/fever.py`, change `FEVER_TIME = 8.0` to `15.0`.
-6. **A harder slice.** In `ninja/game.py`, raise `SLICE_SPEED = 300` to `900`. Now only quick flicks cut.
+Desktop version:
 
-Then run the tests to see which rules you changed: some tests check these exact values on purpose.
+1. Moon gravity: in `ninja/settings.py`, change `GRAVITY = 1250.0` to `600.0`.
+2. Faster Ki: in `ninja/powers.py`, change `KI_PER_CUT = 4` to `20`.
+3. A tougher boss: in `ninja/boss.py`, change `HP = 30` to `60`.
+4. Your own blade colours: in `ninja/settings.py`, edit the three colours of `"Moonlight"` in `BLADES`.
+5. A longer Fever: in `ninja/fever.py`, change `FEVER_TIME = 8.0` to `15.0`.
+
+Web version (same ideas, other files):
+
+1. `web/src/config.js`: `GRAVITY`, the `BLADES` colours.
+2. `web/src/rules/ki.js`: `KI_PER_CUT`.
+3. `web/src/rules/boss.js`: `HP`.
+4. `web/src/rules/fever.js`: `FEVER_TIME`.
+5. `web/src/config.js`: `SLICE_SPEED`, raised to 900, so only quick flicks cut.
+
+Run the tests afterwards. Some of them check these exact values on purpose.
 
 ---
 
-## Building the shareable editions
+## Build, run and publish
 
-First install the build tools: `pip install -r requirements-dev.txt`.
+Install the build tools once: `pip install -r requirements-dev.txt`.
 
-**Windows (.exe):**
+Web version, on your computer:
+
+```
+python tools/build_web_js.py            # creates web/assets/ (sounds converted, art copied)
+python -m http.server 8000 -d web       # then open http://localhost:8000
+```
+
+Publish the web version:
+
+```
+python tools/deploy_web.py              # builds build/site and stops
+python tools/deploy_web.py --push       # also replaces the gh-pages branch with it
+```
+
+The site is only static files, so any web host can serve the `build/site` folder.
+
+Windows version:
 
 ```
 python tools/build_windows.py
 ```
 
-This makes `dist/FruitNinjaNightDojo/` (with `FruitNinjaNightDojo.exe`) and `dist/FruitNinjaNightDojo-windows.zip`
-to share. The game finds its pictures and sounds inside the bundle through `resource_path()` in
-`ninja/settings.py`. To check a build, run it with `NINJA_SMOKE=1`: it plays 180 frames and reports how many sprites,
-fonts and sounds it loaded.
-
-**Browser:**
-
-```
-python tools/build_web.py
-python -m http.server 8000 -d build/web_src/build/web
-```
-
-The first command copies the game into `build/web_src/` (with smaller, mono sound files), then pygbag builds a
-static website in `build/web_src/build/web/`: an `index.html` and the game archive. The second command serves it
-at `http://127.0.0.1:8000` so you can try it. Any static host can serve that folder, for example GitHub Pages. In
-the browser there is no OpenGL, so the CPU renderer is used.
+This makes `dist/FruitNinjaNightDojo/` (with `FruitNinjaNightDojo.exe`) and `dist/FruitNinjaNightDojo-windows.zip`.
+To check a build, run the program with `NINJA_SMOKE=1`: it plays 180 frames and reports how many sprites, fonts and
+sounds it loaded.
 
 ---
 
-## Branch history
+## History of the project
 
-The repository has grown in four steps, each on its own branch:
+The project grew in steps, each kept on its own branch.
 
 | Branch | Version | What it is |
 |---|---|---|
-| `main` | v1 | The original web game in HTML, CSS and JavaScript (`index.html`, `script.js`, `style.css`) |
+| (first commit on `main`) | v1 | The original game in plain HTML, CSS and JavaScript |
 | `feature/pygame-ninja` | v2 | Rewritten in Python with pygame-ce: the dojo, three modes, blades, seals |
-| `feature/premium-ninja` | v3 | Photo-real art and sound, GPU post-processing, juice splashes |
-| `feature/ninja-path` | v4 | Ninja Path mode: Ki powers, Fever, bosses, hazards; the "Hanifa" title; Windows and browser editions |
+| `feature/premium-ninja` | v3 | Photographic art and sound, GPU post-processing, juice splashes |
+| `feature/ninja-path` | v4 | Ninja Path mode (powers, Fever, bosses, hazards), the Hanifa title, the Windows edition |
+| `main` | v5 | The web version in JavaScript replaces the Python-in-the-browser build |
 
-To look at an older version: `git checkout feature/premium-ninja` (and `git checkout feature/ninja-path` to come back).
+To look at an older version: `git checkout feature/premium-ninja`.

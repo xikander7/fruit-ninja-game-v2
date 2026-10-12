@@ -14,16 +14,7 @@ W, H = 1280, 720
 FPS = 120
 GRAVITY = 1250.0
 
-
-def default_save_path():
-    """~/.fruit_ninja_dojo.json; in the browser build (pygbag) /data/save.json when home isn't writable."""
-    home = Path.home() / ".fruit_ninja_dojo.json"
-    if sys.platform == "emscripten" and not os.access(Path.home(), os.W_OK):
-        return Path("/data/save.json")
-    return home
-
-
-SAVE_PATH = default_save_path()
+SAVE_PATH = Path.home() / ".fruit_ninja_dojo.json"
 TITLE = "Hanifa"  # the menu title is a signature: a person's name, spelled exactly
 SUBTITLE = "THE FRUIT NINJA"
 CAPTION = "Hanifa · The Fruit Ninja"

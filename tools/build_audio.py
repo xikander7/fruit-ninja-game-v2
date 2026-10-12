@@ -23,7 +23,7 @@ FADE = 0.005          # s
 PEAK_DB = -1.0
 WHOLE = ("fuse", "music", "fever")  # looped files: keep whole, no splitting
 WIN = int(0.005 * SR)      # 5 ms envelope window
-# The generated files sometimes hold long ambient runs or tiny clicks; keep each hit game-sized.
+# The source files sometimes hold long ambient runs or tiny clicks; keep each hit game-sized.
 # name prefix -> (min seconds, max seconds); over-long hits get a 150 ms fade-out at the cap.
 LIMITS = {"explode": (0.06, 4.0), "gong": (0.06, 6.0), "slash": (0.15, 1.2), "splat": (0.15, 1.0), "ui": (0.06, 1.0), "miss": (0.15, 2.0),
           "timestop": (0.25, 8.0), "clones": (0.25, 8.0), "dragonfire": (0.25, 8.0), "bossroar": (0.25, 8.0),

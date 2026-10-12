@@ -57,7 +57,7 @@ def _mix(*tracks):
 
 
 def pluck(freq, dur, rng, bright=0.5):
-    """Karplus-Strong string — reads like a koto."""
+    """Karplus-Strong string, reads like a koto."""
     period = max(2, int(SR / freq))
     buf = _svf(_noise(period, rng), [freq * (2 + bright * 8)] * period, 0.5, "low")
     n = int(dur * SR)

@@ -466,7 +466,7 @@ class FruitArt:
         if whole is None or half is None:
             return False
         self.whole, self.half = whole, half
-        # every generated half has the cut face up and the rind dome down -> outward is 270 deg
+        # every half sprite has the cut face up and the rind dome down -> outward is 270 deg
         self.half_local = 270
         self.face = None
         if ft.name == "watermelon":  # the window icon

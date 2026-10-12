@@ -1,4 +1,4 @@
-"""Turn the raw generated cutouts (assets/raw, git-ignored) into game-size sprites in assets/sprites.
+"""Turn the raw source cutouts (assets/raw, git-ignored) into game-size sprites in assets/sprites.
 
 Run from the repo root:  python tools/build_sprites.py
 Idempotent: always rebuilds every file from the manifest.
@@ -41,7 +41,7 @@ def scale_by(img, k):
 
 
 def gold_grade(img):
-    # the generated "double" came out as a plain banana: push it to gold (alpha preserved by RGB blends)
+    # the source "double" sprite is a plain banana: push it to gold (alpha preserved by RGB blends)
     img.fill((255, 200, 90), special_flags=pygame.BLEND_RGB_MULT)
     img.fill((40, 28, 0), special_flags=pygame.BLEND_RGB_ADD)
     return img
@@ -117,7 +117,7 @@ def main():
                 cap = 1.05 * max(whole.get_size())
                 if max(half.get_size()) > cap:
                     half = scale_by(half, cap / max(half.get_size()))
-            if name == "golden":  # the generated golden half came out as a plain pale apple: same grade as "double"
+            if name == "golden":  # the source golden half is a plain pale apple: same grade as "double"
                 gold_grade(half)
             pygame.image.save(half, os.path.join(OUT, name + "_half.png"))
             print(f"{name}_half.png", half.get_size())

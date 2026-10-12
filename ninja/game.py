@@ -2,7 +2,6 @@ import json
 import math
 import os
 import random
-import sys
 
 import pygame
 
@@ -18,7 +17,7 @@ from .title import TitleIntro
 from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade, blurred
 from .settings import CAPTION, W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
-SLICE_SPEED = 300  # px/s — just moving the cursor slices; a slow drift doesn't
+SLICE_SPEED = 300  # px/s: just moving the cursor slices; a slow drift doesn't
 MAX_JUMP = 350  # px in one motion event
 # The UI layer is cleared to alpha 1, not 0. pygame blends onto a pixel with any alpha as dst + (src - dst) * a, which
 # over black is premultiplied colour, but copies straight colour onto a fully clear pixel; the 1 keeps every pixel
@@ -28,22 +27,10 @@ UI_CLEAR = (0, 0, 0, 1)
 
 # ---------------- save data ----------------
 
-WEB = sys.platform == "emscripten"  # the browser build (pygbag): CPU drawing, saves mirrored to localStorage
-
-
-def _web_storage():
-    import platform  # pygbag's platform module exposes the page's window object
-    return platform.window.localStorage
-
-
 def load_save():
     data = {"best": {m: 0 for m in MODES}, "blade": "Moonlight", "muted": False, "total_sliced": 0}
     try:
-        if WEB and not SAVE_PATH.exists():
-            text = _web_storage().getItem("fruit_ninja_dojo")
-        else:
-            text = SAVE_PATH.read_text(encoding="utf-8")
-        raw = json.loads(text)
+        raw = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
         for m in MODES:
             v = raw.get("best", {}).get(m, 0)
             data["best"][m] = int(v) if isinstance(v, (int, float)) and v >= 0 else 0
@@ -51,27 +38,19 @@ def load_save():
             data["blade"] = raw["blade"]
         data["muted"] = bool(raw.get("muted", False))
         data["total_sliced"] = max(0, int(raw.get("total_sliced", 0)))
-    except Exception:  # missing or corrupt save (or no browser storage): start fresh
+    except Exception:  # missing or corrupt save: start fresh
         pass
     return data
 
 
 def write_save(data):
     """Never raises: losing a save must never crash the game."""
-    text = json.dumps(data, indent=2)
     try:
-        if WEB:
-            SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)  # /data may not exist yet
         tmp = SAVE_PATH.with_suffix(".tmp")
-        tmp.write_text(text, encoding="utf-8")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         os.replace(tmp, SAVE_PATH)  # atomic: a crash never leaves half a file
     except (OSError, ValueError):
         pass
-    if WEB:
-        try:
-            _web_storage().setItem("fruit_ninja_dojo", text)
-        except Exception:
-            pass
 
 
 # ---------------- world: everything that lives on the dojo wall ----------------
@@ -422,7 +401,7 @@ class Menu(Scene):
     def handle(self, e):
         if e.type == pygame.KEYDOWN:
             self.intro.skip()  # any key skips the intro (and still does what it does)
-            if e.key == pygame.K_ESCAPE and not WEB:  # a browser tab has nothing to quit to
+            if e.key == pygame.K_ESCAPE:
                 self.app.running = False
             elif pygame.K_1 <= e.key <= pygame.K_4 and not self.chosen:
                 b = self.buttons[e.key - pygame.K_1]
@@ -496,7 +475,7 @@ class Menu(Scene):
         label(ui, f, f.mono13, hint, MUTED, (x0, y + 28), "midleft")
         # controls: bottom-right, quiet
         label(ui, f, f.mono13, "Move the cursor fast to slice a fruit", MUTED, (W - 48, y), "midright")
-        label(ui, f, f.mono13, "1–4 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen" + ("" if WEB else "  ·  Esc quit"),
+        label(ui, f, f.mono13, "1–4 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen" + "  ·  Esc quit",
               MUTED, (W - 48, y + 28), "midright")
         self.w.draw_overlay(screen)
 
@@ -1036,7 +1015,7 @@ class App:
     def open_window(self):
         """OpenGL window + PostFX when available; otherwise the v2 SCALED window. Sets self.frame and self.gpu."""
         self.gpu = None
-        if os.environ.get("NINJA_NO_GPU") != "1" and not WEB:  # no OpenGL 3.3 in the browser
+        if os.environ.get("NINJA_NO_GPU") != "1":
             try:
                 from .gpu import PostFX  # moderngl may not even be installed
                 size, mode = ((0, 0), pygame.FULLSCREEN) if self.fullscreen else ((W, H), pygame.RESIZABLE)
@@ -1078,8 +1057,7 @@ class App:
         self.audio.play("swoosh", 0.9)
 
     def frame_step(self):
-        """One frame: timing, input + update + draw, present. The desktop loop and the browser's async loop both
-        call this."""
+        """One frame: timing, input + update + draw, present. The desktop loop calls this."""
         dt = min(self.clock.tick(FPS) / 1000, 1 / 20)
         self.step(dt, pygame.event.get())
         self.present(self.scene.fx_params())
@@ -1106,7 +1084,7 @@ class App:
                     try:
                         pygame.display.toggle_fullscreen()
                     except pygame.error:
-                        pass  # unsupported (e.g. in the browser): stay windowed
+                        pass  # unsupported: stay windowed
             elif e.type == pygame.KEYDOWN and e.key == pygame.K_m:
                 self.audio.toggle_mute()
                 self.save["muted"] = self.audio.muted
