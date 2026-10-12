@@ -170,6 +170,7 @@ class World:
             vx = (0 if b.static else b.vx * 0.6) + sx * 170 + dx * 60
             vy = (0 if b.static else b.vy * 0.6) + sy * 170 - 120
             self.halves.append(Half(fa, b.x + sx * b.r * 0.3, b.y + sy * b.r * 0.3, vx, vy, math.degrees(math.atan2(-sy, sx)), b))
+        self.particles.splash(b.x, b.y, b.ft.juice, dx, dy, b.r)  # first, so the droplets draw over it
         self.particles.juice(b.x, b.y, b.ft.juice, nx, ny, spread=b.r * 1.1)  # the whole chord of the cut
         self.stains.add(b.ft.juice, b.r, b.x, b.y)
         self.slashes.append([b.x, b.y, dx, dy, b.r * 1.6, 0.0])

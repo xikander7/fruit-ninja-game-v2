@@ -20,6 +20,10 @@ RAW = os.path.join(ROOT, "assets", "raw")
 OUT = os.path.join(ROOT, "assets", "sprites")
 FILL = 2.35  # longer side of a whole sprite = FILL * r
 BOMB_R = 38
+SPLASH_SIZE = 300  # longer side of a splash sprite; the game scales it to the fruit
+SPLASH_CROP = {"drops1": 0.72}  # keep the top fraction: drops1's bottom edge is a cut-off pool
+# luma -> alpha: the black studio background keys out, the milk body is fully opaque
+SPLASH_ALPHA = bytes(max(0, min(255, round((v - 12) * 1.6))) for v in range(256))
 
 
 def load_trimmed(path):
@@ -40,6 +44,38 @@ def gold_grade(img):
     img.fill((255, 200, 90), special_flags=pygame.BLEND_RGB_MULT)
     img.fill((40, 28, 0), special_flags=pygame.BLEND_RGB_ADD)
     return img
+
+
+def key_splash(img):
+    """White-on-black photo -> greyscale sprite keyed by brightness: RGB = luma (tinted in game), alpha from luma."""
+    w, h = img.get_size()
+    rgb = pygame.image.tobytes(img, "RGB")
+    # Rec. 601 luma, rounded (pygame's grayscale() reads a little high, which would leave the black a faint veil)
+    luma = bytes((299 * r + 587 * g + 114 * b + 500) // 1000 for r, g, b in zip(rgb[0::3], rgb[1::3], rgb[2::3]))
+    rgba = bytearray(w * h * 4)
+    rgba[0::4] = rgba[1::4] = rgba[2::4] = luma
+    rgba[3::4] = luma.translate(SPLASH_ALPHA)
+    return pygame.image.frombytes(bytes(rgba), (w, h), "RGBA").convert_alpha()
+
+
+def build_splash(name, path):
+    img = pygame.image.load(path).convert()
+    if name in SPLASH_CROP:
+        img = img.subsurface((0, 0, img.get_width(), round(img.get_height() * SPLASH_CROP[name]))).copy()
+    img = key_splash(img)
+    if name in SPLASH_CROP:  # feather the crop line so the splash doesn't end in a ruler-straight edge
+        w, h = img.get_size()
+        band = h // 8
+        fade = pygame.Surface((w, band), pygame.SRCALPHA)
+        for y in range(band):
+            fade.fill((255, 255, 255, round(255 * (1 - (y + 1) / band) ** 1.5)), (0, y, w, 1))
+        img.blit(fade, (0, h - band), special_flags=pygame.BLEND_RGBA_MULT)
+    rect = pygame.mask.from_surface(img, 8).get_bounding_rects()
+    box = rect[0].unionall(rect[1:]) if rect else img.get_rect()
+    img = img.subsurface(box).copy()
+    img = scale_by(img, SPLASH_SIZE / max(img.get_size()))
+    pygame.image.save(img, os.path.join(OUT, f"splash_{name}.png"))
+    print(f"splash_{name}.png", img.get_size())
 
 
 def build_background(src):
@@ -79,6 +115,9 @@ def main():
             pygame.image.save(half, os.path.join(OUT, name + "_half.png"))
             print(f"{name}_half.png", half.get_size())
     build_background(src("background"))
+    for key in manifest:
+        if key.startswith("splash_"):
+            build_splash(key[len("splash_"):], src(key))
 
 
 if __name__ == "__main__":

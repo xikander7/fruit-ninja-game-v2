@@ -9,6 +9,15 @@ import pygame
 from .settings import W, H, WASHI, HANKO, LACQUER, CEDAR
 
 SPRITE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "sprites")
+# juice splash photos (tools/build_sprites.py) and the direction each one flings its liquid, in degrees counter-
+# clockwise from +x as seen on screen; None = a radial crown that reads the same any way round
+SPLASHES = (("burst1", None), ("burst2", 0), ("drops1", 90), ("drops2", 8))
+# the brightest few percent of the milk are specular glints: added back as white after tinting so the juice looks wet
+SPLASH_GLINT = bytes(min(255, max(0, (v - 222) * 8)) for v in range(256))
+# tinted splashes are cached at the largest size the game ever shows one (watermelon: 2.2 * 56 * 1.2 * 1.25 / 300),
+# and the cache is capped: up to 14 colours x 4 sprites x 24 angles of full-size copies would be hundreds of MB
+SPLASH_SCALE = 0.62
+SPLASH_CACHE = 256
 SS = 2  # supersample factor, smoothscaled down for anti-aliasing
 
 
@@ -692,6 +701,35 @@ class Art:
         self._seals = {}
         self._blots = {}
         self._soft = {}
+        self.splashes, self.splash_dirs = [], []  # greyscale + alpha, tinted per fruit by splash()
+        self._glints = []
+        for name, direction in SPLASHES:
+            img = load_sprite("splash_" + name)
+            if img:
+                self.splashes.append(img)
+                self.splash_dirs.append(direction)
+                rgb = bytearray(pygame.image.tobytes(img, "RGB")).translate(SPLASH_GLINT)  # grey, so all channels match
+                self._glints.append(pygame.image.frombytes(bytes(rgb), img.get_size(), "RGB"))
+        self._splash = {}
+
+    def splash(self, i, color, angle=0.0):
+        """Splash sprite i tinted to a juice colour and rotated by angle degrees (snapped to 15 deg steps), at
+        SPLASH_SCALE of the sprite's size. Cached per (sprite, colour, step)."""
+        step = round(angle / 15) % 24
+        key = (i, color, step)
+        img = self._splash.get(key)
+        if img is None:
+            if step:
+                img = pygame.transform.rotozoom(self.splash(i, color), step * 15, 1.0)
+            else:
+                img = self.splashes[i].copy()
+                img.fill(color, special_flags=pygame.BLEND_RGB_MULT)  # white milk -> juice; the photo's shading stays
+                img.blit(self._glints[i], (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+                img = pygame.transform.smoothscale_by(img, SPLASH_SCALE)
+            if len(self._splash) >= SPLASH_CACHE:  # a miss costs well under a millisecond: just start over
+                self._splash.clear()
+            self._splash[key] = img
+        return img
 
     def seal(self, glyph, size=120):
         key = (glyph, size)

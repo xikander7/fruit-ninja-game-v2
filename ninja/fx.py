@@ -5,6 +5,7 @@ from collections import deque
 
 import pygame
 
+from .art import SPLASH_SCALE
 from .settings import W, H, GRAVITY, WASHI, GOLD
 
 
@@ -126,6 +127,8 @@ class Particles:
             p = self.add(x, y, 0, 0, 0.15, spread * 2.2, color, "sheet", 0.0)
             if p:
                 p.shape = (ux, uy, nx * side, ny * side)
+        if self.art.splashes:  # the splash photo carries the bulk of the liquid: thinner fine spray around it
+            n //= 2
         for i in range(n + 10):
             side = random.choice((-1, 1))
             big = i < 10  # a few heavy drops (5-10 px heads); the rest is fine spray
@@ -151,6 +154,39 @@ class Particles:
             sp = random.uniform(90, 220)
             self.add(x + ux * random.uniform(-1, 1) * spread, y + uy * random.uniform(-1, 1) * spread,
                      math.cos(a) * sp, math.sin(a) * sp, random.uniform(0.35, 0.55), random.uniform(16, 30), color, "glow", 0.0)
+
+    SPLASH_LIFE = 0.35
+
+    def splash(self, x, y, color, dx, dy, r):
+        """One photographed splash at the cut, flung along the blade (either way); a crown 40 % of the time."""
+        art = self.art
+        if not art.splashes:
+            return None
+        radial = [i for i, d in enumerate(art.splash_dirs) if d is None]
+        directional = [i for i, d in enumerate(art.splash_dirs) if d is not None]
+        if radial and (not directional or random.random() < 0.4):
+            i = random.choice(radial)
+            angle = random.uniform(-20, 20)  # a crown seen from the side: only tilt it a little
+        else:
+            i = random.choice(directional)
+            side = random.choice((1, -1))
+            angle = math.degrees(math.atan2(-dy * side, dx * side)) - art.splash_dirs[i]
+        img = art.splash(i, color, angle)
+        k = 2.2 * r / 300 * random.uniform(0.9, 1.2)
+        d = art.splash_dirs[i]
+        if d is not None:  # the photo's stream starts at its edge: push it forward so it leaves from the fruit
+            w, h = art.splashes[i].get_size()
+            a = math.radians(d)
+            reach = 0.4 * k * (abs(w * math.cos(a)) + abs(h * math.sin(a)))
+            x, y = x + dx * side * reach, y + dy * side * reach
+        p = self.add(x, y, 0, 0, self.SPLASH_LIFE, k, color, "splash", 0.0)
+        if p:
+            p.vr = 0
+            # scaled once to its final size; each frame only shrinks this small copy
+            w, h = img.get_size()
+            f = k * 1.25 / SPLASH_SCALE
+            p.shape = pygame.transform.smoothscale(img, (max(1, round(w * f)), max(1, round(h * f))))
+        return p
 
     def sparks(self, x, y, color, n=30, speed=700, life=0.6):
         for _ in range(n):
@@ -305,6 +341,14 @@ class Particles:
                 tmp = pygame.Surface((int(max(xs)) - x0 + 2, int(max(ys)) - y0 + 2), pygame.SRCALPHA)
                 pygame.draw.polygon(tmp, (*p.color, int(110 * t)), [(qx - x0, qy - y0) for qx, qy in pts])
                 surf.blit(tmp, (x0, y0))
+            elif k == "splash":
+                u = 1 - t
+                g = (1 + 0.25 * (1 - (1 - u) ** 3)) / 1.25  # grows to 1.25x, ease-out
+                img = p.shape
+                w, h = img.get_size()
+                img = pygame.transform.smoothscale(img, (max(1, round(w * g)), max(1, round(h * g))))
+                img.set_alpha(int(230 * (1 - u * u)))  # fades out, ease-in
+                surf.blit(img, img.get_rect(center=(p.x, p.y)))
             elif k == "smoke":
                 img = self.art.soft(p.size, p.color)
                 img.set_alpha(int(255 * t))
