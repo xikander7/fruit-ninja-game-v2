@@ -87,6 +87,8 @@ class Fonts:
     MONO = ("IBMPlexMono-Regular.ttf", "consolas,dejavusansmono,couriernew", False)  # small utility labels
 
     def __init__(self):
+        pygame.font.init()  # no-op once pygame is up; Art can be built before pygame.init()
+
         def f(kind, size):
             return _font(kind[0], size, kind[1], kind[2])
 
@@ -94,6 +96,7 @@ class Fonts:
         self.pause = f(self.DISPLAY, 72)
         self.mode = f(self.DISPLAY, 40)
         self.caption = f(self.DISPLAY, 36)
+        self.boss = f(self.DISPLAY, 22)  # boss name over its HP bar
         self.final = f(self.NUM, 140)
         self.score = f(self.NUM, 72)
         self.timer = f(self.NUM, 64)

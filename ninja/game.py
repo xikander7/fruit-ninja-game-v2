@@ -11,6 +11,7 @@ from .entities import Body, Half, seg_hits_circle, rotate_vec
 from .hud import label, brush_x, chevron, hairline_ring, draw_play_hud, draw_grades
 from .powers import KEYS as POWER_KEYS, KI_PER_COMBO, KiMeter, on_cut, tick_power, use_power
 from .fever import Fever, on_cut as fever_cut, tick_fever, fever_fx
+from .boss import BossDirector, slice_boss, tick_boss
 from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade
 from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
@@ -564,7 +565,7 @@ class Play(Scene):
         self.app, self.mode = app, mode
         self.features = MODE_FEATURES[mode]
         self.ki, self.power, self.last_power = KiMeter() if "powers" in self.features else None, None, "timestop"
-        self.fever = Fever() if "fever" in self.features else None
+        self.fever, self.boss = (Fever() if "fever" in self.features else None), (BossDirector() if "boss" in self.features else None)
         self.w = World(app)
         self.score = 0
         self.best_prev = app.save["best"][mode]
@@ -686,6 +687,7 @@ class Play(Scene):
             self.app.audio.play("power")
 
     def slice(self):
+        slice_boss(self)  # the boss is never in w.bodies (no power targets it); its own hits, here
         for seg in () if self.power and self.power.blocks_slicing else self.app.segments:
             for b in self.w.bodies:
                 if b.alive and seg_hits_circle(*seg, b.x, b.y, b.r * 1.05):
@@ -810,7 +812,7 @@ class Play(Scene):
                     self.launch(q[1], q[2])
             self.queue = [q for q in self.queue if q[0] > 0]
             self.spawn_t -= wdt
-            if self.spawn_t <= 0 and not self.queue:
+            if self.spawn_t <= 0 and not self.queue and not (self.boss and self.boss.pause_waves):
                 self.wave()
                 self.spawn_t = self.interval()
             if self.frenzy > 0:
@@ -826,6 +828,7 @@ class Play(Scene):
                 self.combo_t -= dt
                 if self.combo_t <= 0:
                     self.finish_combo()
+        tick_boss(self, wdt * w.time_scale())  # world time: Time Stop and hit-stop hold it
         for b in w.bodies:
             if b.alive and b.gone():
                 b.alive = False
@@ -866,6 +869,7 @@ class Play(Scene):
                 img = pygame.transform.smoothscale_by(img, 1.5 - 0.5 * k)
             img.set_alpha(a)
             L.blit(img, img.get_rect(center=(x, H - 46)))
+        self.boss and self.boss.draw(L, add)
         if self.power:
             self.power.draw(L, add, self.app.ui)
 

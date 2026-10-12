@@ -4,6 +4,7 @@ import math
 import pygame
 
 from .art import FRUITS
+from .boss import HP as BOSS_HP, CRACK_AT
 from .fx import glow
 from .fever import GRADE as FEVER_GRADE
 from .powers import KI_MAX
@@ -157,6 +158,7 @@ def draw_play_hud(play, ui):
         label(ui, f, f.mono12, pw.title, pw.color, (42, y), "midleft", tracking=3)
         thin_bar(ui, 42, y + 14, 140, pw.left(), pw.color)
     draw_ki(play, ui)
+    draw_boss_bar(play, ui)
 
 
 KI_W = 180
@@ -242,3 +244,28 @@ def draw_grades(play, screen):
     k = play.fever.grade() if play.fever else 0.0
     if k > 0:  # Fever's warm gold (the GPU also lifts saturation in its post-fx)
         screen.fill(lerp_rgb((255, 255, 255), FEVER_GRADE, k), special_flags=pygame.BLEND_RGB_MULT)
+
+
+BOSS_W = 360
+
+
+def draw_boss_bar(play, ui):
+    """Top centre while a boss is up: its name in Cormorant SC over a thin hanko-red bar, with a pale trail where the
+    last hits took the HP and hairline notches where the rind cracks. Fades in as it rises and out as it goes."""
+    b = play.boss.active if play.boss else None
+    if b is None:
+        return
+    f = play.app.art.fonts
+    a = min(1.0, b.t / 0.4) if b.phase == "rise" else max(0.0, 1 - b.t / 0.5) if b.phase == "escape" else         max(0.0, 1 - b.dead_t / 0.6) if b.phase == "dead" else 1.0
+    if a <= 0:
+        return
+    x, y = W // 2 - BOSS_W // 2, 50
+    label(ui, f, f.boss, b.title, WASHI, (W / 2, y - 16), tracking=2, alpha=int(255 * a))
+    bar = pygame.Surface((BOSS_W, 4), pygame.SRCALPHA)
+    bar.fill((*WASHI, 40))
+    bar.fill((*WASHI, 150), (0, 0, int(BOSS_W * b.shown / BOSS_HP), 4))
+    bar.fill((*HANKO, 255), (0, 0, int(BOSS_W * b.hp / BOSS_HP), 4))
+    for h in CRACK_AT:
+        bar.fill((0, 0, 0, 160), (int(BOSS_W * h / BOSS_HP), 0, 1, 4))
+    bar.set_alpha(int(255 * a))
+    ui.blit(bar, (x, y))
