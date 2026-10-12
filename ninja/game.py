@@ -496,7 +496,7 @@ class Menu(Scene):
         label(ui, f, f.mono13, hint, MUTED, (x0, y + 28), "midleft")
         # controls: bottom-right, quiet
         label(ui, f, f.mono13, "Move the cursor fast to slice a fruit", MUTED, (W - 48, y), "midright")
-        label(ui, f, f.mono13, "1–4 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
+        label(ui, f, f.mono13, "1–4 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen" + ("" if WEB else "  ·  Esc quit"),
               MUTED, (W - 48, y + 28), "midright")
         self.w.draw_overlay(screen)
 
@@ -1103,7 +1103,10 @@ class App:
                     self.fullscreen = not self.fullscreen
                     self.open_window()
                 else:
-                    pygame.display.toggle_fullscreen()
+                    try:
+                        pygame.display.toggle_fullscreen()
+                    except pygame.error:
+                        pass  # unsupported (e.g. in the browser): stay windowed
             elif e.type == pygame.KEYDOWN and e.key == pygame.K_m:
                 self.audio.toggle_mute()
                 self.save["muted"] = self.audio.muted

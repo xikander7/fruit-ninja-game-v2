@@ -238,7 +238,7 @@ def tick_hazards(play, dt):
     mx, my = play.app.mouse
     for s in hz.shurikens:
         s.update(mdt)
-        if not s.parried and not s.struck and s.near(mx, my):
+        if mdt > 0 and not s.parried and not s.struck and s.near(mx, my):  # a shuriken held by Time Stop can't strike
             s.struck = True
             play.lose_life(s.x, "shuriken")
             hz.red = 1.0

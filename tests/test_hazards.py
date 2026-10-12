@@ -38,6 +38,17 @@ class HazardsInPlay(unittest.TestCase):
         run(self.app, 90)
         self.assertEqual(p.lives, 2)
 
+    def test_frozen_shuriken_cannot_hit_during_time_stop(self):
+        from ninja.powers import KI_MAX
+        p = self.p
+        move(self.app, (640, 360))
+        p.ki.value = KI_MAX
+        self.app.step(DT, [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_q, mod=0, unicode="q", scancode=0)])
+        self.assertEqual(p.power.name, "timestop")
+        p.throw_shuriken(630, 360, 640, 360)  # already touching the cursor, frozen in place
+        run(self.app, 60)
+        self.assertEqual(p.lives, 3)
+
     def test_fast_slice_parries(self):
         p = self.p
         move(self.app, (640, 600))
