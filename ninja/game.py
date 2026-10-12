@@ -100,7 +100,7 @@ class World:
             vx = (0 if b.static else b.vx * 0.6) + sx * 170 + dx * 60
             vy = (0 if b.static else b.vy * 0.6) + sy * 170 - 120
             self.halves.append(Half(fa, b.x + sx * b.r * 0.3, b.y + sy * b.r * 0.3, vx, vy, math.degrees(math.atan2(-sy, sx)), b))
-        self.particles.juice(b.x, b.y, b.ft.juice, nx, ny, spread=b.r * 0.6)
+        self.particles.juice(b.x, b.y, b.ft.juice, nx, ny, spread=b.r * 1.1)  # the whole chord of the cut
         self.stains.add(b.ft.juice, b.r, b.x, b.y)
         self.slashes.append([b.x, b.y, dx, dy, b.r * 1.6, 0.0])
         self.app.audio.play("splat", 0.8)
@@ -167,7 +167,7 @@ class World:
             h.update(dt)
         self.halves = [h for h in self.halves if not h.gone()]
         self.particles.update(dt)
-        self.particles.blur = dt / real_dt if real_dt > 0 else 1.0
+        self.particles.blur = self.time_scale()  # slow-mo shortens streaks; freeze doesn't
         self.stains.update(dt)
         for s in self.slashes:
             s[5] += dt
@@ -211,8 +211,8 @@ class World:
         self.particles.draw(L, add)
         for x, y, dx, dy, r, age in self.slashes:
             k = 1 - age / 0.16
-            c = (int(255 * k), int(255 * k), int(240 * k))
-            pygame.draw.line(add, c, (x - dx * r * 1.4, y - dy * r * 1.4), (x + dx * r * 1.4, y + dy * r * 1.4), max(1, int(7 * k)))
+            c = (int(200 * k), int(200 * k), int(190 * k))
+            pygame.draw.line(add, c, (x - dx * r * 1.4, y - dy * r * 1.4), (x + dx * r * 1.4, y + dy * r * 1.4), max(1, int(4 * k)))
         for x, y, age in self.rings:  # the shockwave's visible front: same radius as the GPU distortion ring
             k = age / self.SHOCK
             # on the GPU the distortion carries the wave, so its glowing front stays faint
@@ -579,8 +579,9 @@ class Play(Scene):
             self.app.audio.fuse(False)
             return
         w = self.w
-        wdt = dt * (0.4 if self.freeze > 0 else 1.0) * w.time_scale()
-        w.update(wdt, dt)
+        # game clock: only freeze slows the timer, spawning and difficulty ramp; slow-mo only slows the world
+        wdt = dt * (0.4 if self.freeze > 0 else 1.0)
+        w.update(wdt * w.time_scale(), dt)
         self.score_pop = max(0.0, self.score_pop - dt)
         self.strike_pop = [max(0.0, p - dt) for p in self.strike_pop]
         for m in self.misses:

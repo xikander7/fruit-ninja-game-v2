@@ -96,6 +96,28 @@ class WorldFx(unittest.TestCase):
         self.assertEqual(w.time_scale(), 1.0)
         self.assertEqual(play.fx_params()["zoom"], 1.0)
 
+    def test_slowmo_does_not_stretch_the_timer(self):
+        play, w = self.play, self.play.w
+        t0, e0 = play.time, play.elapsed
+        for i in range(4):
+            b = w.throw("orange", 300 + i * 150, 360, 0, 0, static=True)
+            play.hit(b, (b.x - 50, b.y, b.x + 50, b.y))
+        self.assertLess(w.time_scale(), 1.0)
+        w.hitstop = 0.0  # a random arcade critical may have set one; hit-stop (not slow-mo) pauses the clock
+        self.run_for(0.25)  # inside the slow-mo hold, before the combo is tallied
+        self.assertLess(w.time_scale(), 1.0)
+        self.assertAlmostEqual(t0 - play.time, 0.25, delta=0.01)  # real time, not slowed
+        self.assertAlmostEqual(play.elapsed - e0, 0.25, delta=0.01)
+
+    def test_streaks_follow_slowmo_not_freeze(self):
+        play, w = self.play, self.play.w
+        play.freeze = 5.0
+        self.run_for(0.1)
+        self.assertEqual(w.particles.blur, 1.0)
+        w.slow()
+        self.run_for(0.1)
+        self.assertAlmostEqual(w.particles.blur, 0.3)
+
     def test_glow_layer_shakes_with_the_world_on_gpu_path(self):
         app, w = self.app, self.play.w
         app.gpu = object()  # World/App only test it against None while drawing

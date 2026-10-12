@@ -104,7 +104,7 @@ class Particles:
     def __init__(self, art):
         self.art = art
         self.items = []
-        self.blur = 1.0  # world time per real time: streaks shorten in slow-mo, like real motion blur
+        self.blur = 1.0  # slow-mo time scale: streaks shorten in slow-mo, like real motion blur
 
     def add(self, *a, **k):
         if len(self.items) < self.CAP:
@@ -119,29 +119,38 @@ class Particles:
             p.c2 = tint(color, 0.55)  # wet highlight along the droplet
 
     def juice(self, x, y, color, nx, ny, n=35, spread=30):
-        """Juice leaves the whole cut face, flung mostly along the normal: a few heavy drops, many fine ones."""
+        """Juice leaves the whole cut face, flung mostly along the normal: heavy round drops, many fine ones,
+        a brief translucent sheet along the cut and a wet emissive mist."""
         ux, uy = ny, -nx  # along the cut
-        for _ in range(n):
+        for side in (1, -1):  # the sheet of juice torn off the cut face; gone in ~0.15 s
+            p = self.add(x, y, 0, 0, 0.15, spread * 2.2, color, "sheet", 0.0)
+            if p:
+                p.shape = (ux, uy, nx * side, ny * side)
+        for i in range(n + 10):
             side = random.choice((-1, 1))
-            big = random.random() < 0.35
-            sp = 60 + 480 * random.random() ** (1.6 if big else 1.0)  # heavy drops are slower
-            a = math.atan2(ny * side, nx * side) + random.uniform(-0.9, 0.9)
+            big = i < 10  # a few heavy drops (5-10 px heads); the rest is fine spray
+            sp = 80 + (300 * random.random() ** 1.4 if big else 520 * random.random())
+            a = math.atan2(ny * side, nx * side) + random.uniform(-0.8, 0.8)
             o = random.uniform(-1, 1) * spread
-            self.drop(x + ux * o, y + uy * o, math.cos(a) * sp, math.sin(a) * sp - 120, random.uniform(0.5, 1.0),
-                      random.uniform(3.5, 6.5) if big else random.uniform(1.4, 3.0), shade(color, random.uniform(0.7, 1.08)))
+            vx, vy = math.cos(a) * sp, math.sin(a) * sp - 120
+            lead = random.uniform(0.0, 0.05)  # staggered release: juice keeps coming off the face, not in one row
+            self.drop(x + ux * o + vx * lead, y + uy * o + vy * lead, vx, vy, random.uniform(0.55, 1.0),
+                      random.uniform(2.6, 5.0) if big else random.uniform(1.3, 2.6), shade(color, random.uniform(0.72, 1.05)))
         for side in (1, -1):  # two curved sprays: a fan of droplets with a smooth speed profile reads as one sheet
             a0 = math.atan2(ny * side, nx * side) + random.uniform(-0.25, 0.25)
             life = random.uniform(0.45, 0.6)
-            for i in range(10):
-                u = i / 9 - 0.5
+            for i in range(12):
+                u = i / 11 - 0.5
                 sp = 380 + 260 * math.cos(math.pi * u) + random.uniform(-30, 30)
                 a = a0 + u * 1.1
                 o = u * spread * 1.6
                 self.drop(x + ux * o, y + uy * o, math.cos(a) * sp, math.sin(a) * sp - 160, life,
-                          1.4 + 1.8 * math.cos(math.pi * u), color)
-        for _ in range(8):  # faint mist, emissive so it catches the bloom
+                          1.4 + 2.2 * math.cos(math.pi * u), color)
+        for _ in range(10):  # mist on the emissive layer: the bloom turns it into a wet glow
             a = random.uniform(0, math.tau)
-            self.add(x, y, math.cos(a) * 90, math.sin(a) * 90, 0.4, random.uniform(14, 26), color, "glow", 0.0)
+            sp = random.uniform(90, 220)
+            self.add(x + ux * random.uniform(-1, 1) * spread, y + uy * random.uniform(-1, 1) * spread,
+                     math.cos(a) * sp, math.sin(a) * sp, random.uniform(0.35, 0.55), random.uniform(16, 30), color, "glow", 0.0)
 
     def sparks(self, x, y, color, n=30, speed=700, life=0.6):
         for _ in range(n):
@@ -230,16 +239,25 @@ class Particles:
     def draw(self, surf, add):
         line, circle = pygame.draw.line, pygame.draw.circle
         for p in self.items:
-            t = p.life / p.max
             k = p.kind
+            t = p.life / p.max
             if k == "drop":
                 r = p.size * (0.4 + 0.6 * t)
                 vx, vy = p.vx, p.vy
                 sp = math.hypot(vx, vy) or 1
+                dx, dy = vx / sp, vy / sp
                 L = max(2.0, sp * 0.018 * self.blur)
-                tx, ty = p.x - vx / sp * L, p.y - vy / sp * L
+                tx, ty = p.x - dx * L, p.y - dy * L
                 if r < 1.2:
                     line(surf, p.color, (tx, ty), (p.x, p.y), 2)
+                    continue
+                if r >= 2.2:  # heavy drop: round head, tail tapering to a point along the velocity, specular
+                    tl = L + r * 1.2
+                    pygame.draw.polygon(surf, p.color, [(p.x - dy * r, p.y + dx * r), (p.x - dx * tl, p.y - dy * tl),
+                                                        (p.x + dy * r, p.y - dx * r)])
+                    circle(surf, p.color, (p.x, p.y), r)
+                    circle(surf, p.c2, (p.x - r * 0.3, p.y - r * 0.35), r * 0.45)  # lit side of the bead
+                    circle(surf, tint(p.color, 0.8), (p.x - r * 0.38, p.y - r * 0.42), max(1.0, r * 0.16))
                     continue
                 # velocity-stretched capsule: round head, thinner tail, light core line along it
                 line(surf, p.color, (tx, ty), (p.x, p.y), max(2, int(r * 1.7)))
@@ -259,7 +277,8 @@ class Particles:
                 add.blit(g, g.get_rect(center=(p.x, p.y)), special_flags=pygame.BLEND_RGB_ADD)
                 add.fill(tint(shade(p.color, fl), 0.3 * fl), (p.x - 1, p.y - 1, p.size, p.size))
             elif k == "glow":
-                g = glow(self.art, p.size, p.color, t * 0.3)
+                # peaks mid-life, once it has drifted off the fruit, so the fruit itself doesn't light up
+                g = glow(self.art, p.size, p.color, 0.45 * t * min(1.0, (1 - t) * 2.5))
                 add.blit(g, g.get_rect(center=(p.x, p.y)), special_flags=pygame.BLEND_RGB_ADD)
             elif k == "shard":
                 a = math.radians(p.rot)
@@ -270,6 +289,22 @@ class Particles:
                 heat = t * t
                 if heat > 0.05:  # the torn edge is still hot and cools as it flies
                     line(add, shade(p.color, heat * 0.7), pts[1], pts[2], 2)
+            elif k == "sheet":
+                # translucent fan of juice torn off the cut face: grows outward from the cut line, fades fast
+                ux, uy, nx, ny = p.shape
+                age = p.max - p.life
+                h, d = p.size / 2, 6 + 520 * age
+                pts = [(p.x - ux * h, p.y - uy * h)]
+                for i in range(1, 8):
+                    u = i / 8 * 2 - 1
+                    reach = d * (1 - u * u) ** 0.5
+                    pts.append((p.x + ux * h * u * (1 + age * 3) + nx * reach, p.y + uy * h * u * (1 + age * 3) + ny * reach))
+                pts.append((p.x + ux * h, p.y + uy * h))
+                xs, ys = [q[0] for q in pts], [q[1] for q in pts]
+                x0, y0 = int(min(xs)) - 1, int(min(ys)) - 1
+                tmp = pygame.Surface((int(max(xs)) - x0 + 2, int(max(ys)) - y0 + 2), pygame.SRCALPHA)
+                pygame.draw.polygon(tmp, (*p.color, int(110 * t)), [(qx - x0, qy - y0) for qx, qy in pts])
+                surf.blit(tmp, (x0, y0))
             elif k == "smoke":
                 img = self.art.soft(p.size, p.color)
                 img.set_alpha(int(255 * t))

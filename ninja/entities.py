@@ -7,7 +7,7 @@ from .art import FRUITS
 from .settings import H, GRAVITY
 
 BLUR_SPEED = 900  # px/s: faster than this, a sprite leaves motion-blur ghosts
-GHOSTS = ((1, 70), (2, 35))  # (k frames back, alpha)
+GHOSTS = ((0.5, 40), (1.0, 18))  # (fraction of a frame back, alpha): a smear, not a second copy
 
 
 def seg_hits_circle(ax, ay, bx, by, cx, cy, r):
