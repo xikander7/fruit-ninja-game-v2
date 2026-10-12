@@ -1,1 +1,2 @@
 pygame-ce>=2.5
+moderngl>=5.13

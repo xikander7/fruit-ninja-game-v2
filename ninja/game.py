@@ -141,8 +141,7 @@ class World:
             self.particles.petal()
 
     def draw(self, screen, extra=None):
-        add = self.app.add
-        add.fill((0, 0, 0))
+        add = self.app.add  # cleared once per frame by App
         L = self.layer
         L.blit(self.bg, (0, 0))
         self.stains.draw(L)
@@ -171,7 +170,8 @@ class World:
             k = age / 0.6
             c = tuple(int(v * (1 - k)) for v in (255, 200, 120))
             pygame.draw.circle(add, c, (x, y), 30 + k * 380, max(1, int(14 * (1 - k))))
-        L.blit(add, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+        if self.app.gpu is None:  # the GPU path composites (and blooms) the glow layer itself
+            L.blit(add, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
         ox, oy = self.shake.offset()
         if ox or oy:
             screen.fill(LACQUER)
@@ -181,8 +181,11 @@ class World:
         for s in self.stamps:
             s.draw(screen)
         self.popups.draw(screen)
-        if self.flash > 0:
+        if self.flash > 0 and self.app.gpu is None:  # on the GPU the flash is a post-fx param
             screen.fill((int(255 * self.flash),) * 3, special_flags=pygame.BLEND_RGB_ADD)
+
+    def fx_params(self):
+        return {"flash": self.flash}
 
 
 class SliceButton:
@@ -238,6 +241,9 @@ class Scene:
 
     def focus_lost(self):
         pass
+
+    def fx_params(self):
+        return {}  # neutral post-processing
 
 
 # ---------------- menu ----------------
@@ -304,6 +310,9 @@ class Menu(Scene):
                 mode = self.chosen
                 self.chosen = None
                 self.app.go(lambda: Play(self.app, mode))
+
+    def fx_params(self):
+        return self.w.fx_params()
 
     def draw(self, screen):
         f = self.app.art.fonts
@@ -486,6 +495,9 @@ class Play(Scene):
         if self.state == "play":
             self.paused = True
 
+    def fx_params(self):
+        return self.w.fx_params()
+
     def update(self, dt):
         if self.paused:
             self.app.audio.fuse(False)
@@ -572,7 +584,7 @@ class Play(Scene):
         save["total_sliced"] += self.stats["sliced"]
         write_save(save)
         self.app.audio.fuse(False)
-        snap = self.app.screen.copy()
+        snap = self.app.frame.copy()
         self.app.go(lambda: GameOver(self.app, self, snap))
 
     def draw_world_extra(self, L, add):
@@ -694,6 +706,9 @@ class GameOver(Scene):
                 mode = self.play.mode
                 self.app.go((lambda: Play(self.app, mode)) if c == "retry" else (lambda: Menu(self.app)))
 
+    def fx_params(self):
+        return self.w.fx_params()
+
     def draw(self, screen):
         f = self.app.art.fonts
         self.w.draw(screen)
@@ -750,17 +765,15 @@ class Wipe:
 class App:
     def __init__(self):
         pygame.init()
-        flags = pygame.SCALED | pygame.RESIZABLE
-        try:
-            self.screen = pygame.display.set_mode((W, H), flags, vsync=1)
-        except pygame.error:
-            self.screen = pygame.display.set_mode((W, H), flags)
+        self.fullscreen = False
+        self.open_window()
         pygame.display.set_caption("Fruit Ninja · Night Dojo")
-        self.screen.fill(LACQUER)
+        self.add = pygame.Surface((W, H))  # emissive layer: glows only, black = none
+        self.frame.fill(LACQUER)
         f = pygame.font.SysFont("bahnschrift,segoeui,arial", 28, bold=True)
         img = f.render("sharpening the blade…", True, WASHI)
-        self.screen.blit(img, img.get_rect(center=(W / 2, H / 2)))
-        pygame.display.flip()
+        self.frame.blit(img, img.get_rect(center=(W / 2, H / 2)))
+        self.present({})
         self.art = Art()
         self.audio = Audio()
         pygame.display.set_icon(self.art.fruits["watermelon"].face)
@@ -768,7 +781,6 @@ class App:
         if self.save["muted"]:
             self.audio.muted = True
         self.clock = pygame.time.Clock()
-        self.add = pygame.Surface((W, H))
         self.trail = Trail()
         self.now = 0.0
         self.speed = 0.0
@@ -781,8 +793,38 @@ class App:
         pygame.mouse.set_visible(False)
         self.audio.start_music()
 
+    def open_window(self):
+        """OpenGL window + PostFX when available; otherwise the v2 SCALED window. Sets self.frame and self.gpu."""
+        self.gpu = None
+        if os.environ.get("NINJA_NO_GPU") != "1":
+            try:
+                from .gpu import PostFX  # moderngl may not even be installed
+                size, mode = ((0, 0), pygame.FULLSCREEN) if self.fullscreen else ((W, H), pygame.RESIZABLE)
+                pygame.display.set_mode(size, pygame.OPENGL | pygame.DOUBLEBUF | mode, vsync=1)
+                self.gpu = PostFX()
+                self.frame = pygame.Surface((W, H))
+                return
+            except Exception:  # no GL 3.3, no moderngl, headless driver...: fall back to the CPU path
+                self.gpu = None
+        flags = pygame.SCALED | pygame.RESIZABLE
+        try:
+            self.frame = pygame.display.set_mode((W, H), flags, vsync=1)
+        except pygame.error:
+            self.frame = pygame.display.set_mode((W, H), flags)
+
+    def to_logical(self, pos):
+        """Window pixels -> 1280x720 through the letterbox (SCALED did this for us on the CPU path)."""
+        from .gpu import letterbox
+        x, y, w, h = letterbox(0, 0, *pygame.display.get_window_size())
+        return ((pos[0] - x) * W / w, (pos[1] - y) * H / h)
+
+    def present(self, params):
+        if self.gpu:
+            self.gpu.render(self.frame, self.add, params, (0, 0, *pygame.display.get_window_size()))
+        pygame.display.flip()
+
     def go(self, make_scene):
-        snap = self.screen.copy()
+        snap = self.frame.copy()
         self.scene = make_scene()
         self.wipe = Wipe(snap)
         self.audio.play("swoosh", 0.9)
@@ -791,17 +833,24 @@ class App:
         while self.running:
             dt = min(self.clock.tick(FPS) / 1000, 1 / 20)
             self.step(dt, pygame.event.get())
-            pygame.display.flip()
+            self.present(self.scene.fx_params())
         pygame.quit()
 
     def step(self, dt, events):
         self.now += dt
         pts = [self.mouse]
         for e in events:
+            if self.gpu and e.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                e.pos = self.to_logical(e.pos)
             if e.type == pygame.QUIT:
                 self.running = False
             elif e.type == pygame.KEYDOWN and e.key == pygame.K_F11:
-                pygame.display.toggle_fullscreen()
+                if self.gpu:  # a GL window can't be toggled in place: recreate it and its GL objects
+                    self.gpu.release()
+                    self.fullscreen = not self.fullscreen
+                    self.open_window()
+                else:
+                    pygame.display.toggle_fullscreen()
             elif e.type == pygame.KEYDOWN and e.key == pygame.K_m:
                 self.audio.toggle_mute()
                 self.save["muted"] = self.audio.muted
@@ -830,23 +879,26 @@ class App:
                 self.audio.play("swoosh", 0.55)
         self.trail.update(self.now)
         self.scene.update(dt)
-        self.scene.draw(self.screen)
+        self.add.fill((0, 0, 0))
+        self.scene.draw(self.frame)
         if self.wipe and not self.wipe.update(dt):
             self.wipe = None
         if self.wipe:
-            self.wipe.draw(self.screen)
+            self.wipe.draw(self.frame)
         self.draw_blade()
 
     def draw_blade(self):
         colors = BLADES[self.save["blade"]][:3]
         xs = [p[0] for p in self.trail.pts if p] + [self.mouse[0]]
         ys = [p[1] for p in self.trail.pts if p] + [self.mouse[1]]
-        box = pygame.Rect(min(xs) - 40, min(ys) - 40, max(xs) - min(xs) + 80, max(ys) - min(ys) + 80).clip(self.screen.get_rect())
+        box = pygame.Rect(min(xs) - 40, min(ys) - 40, max(xs) - min(xs) + 80, max(ys) - min(ys) + 80).clip(self.frame.get_rect())
         if not box.w or not box.h:
             return
-        self.add.fill((0, 0, 0), box)
+        if self.gpu is None:
+            self.add.fill((0, 0, 0), box)  # the world's glow is already on the frame; don't add it twice
         self.trail.draw(self.add, colors, self.now)
         glow = self.art.soft(16 if self.speed > SLICE_SPEED else 11, colors[1], False)
         self.add.blit(glow, glow.get_rect(center=self.mouse), special_flags=pygame.BLEND_RGB_ADD)
         pygame.draw.circle(self.add, colors[2], self.mouse, 3)
-        self.screen.blit(self.add, box, box, special_flags=pygame.BLEND_RGB_ADD)
+        if self.gpu is None:
+            self.frame.blit(self.add, box, box, special_flags=pygame.BLEND_RGB_ADD)
