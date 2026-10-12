@@ -665,21 +665,18 @@ def make_soft(radius, color, alpha=True):
     return s
 
 
-def make_frost():
-    s = pygame.Surface((W, H), pygame.SRCALPHA)
-    for i in range(24):
-        t = i / 23
-        pygame.draw.rect(s, (190, 230, 255, int(12 * (1 - t))), pygame.Rect(0, 0, W, H).inflate(-t * 260, -t * 200), int(14))
-    rng = random.Random(3)
-    for _ in range(90):  # ice crystals at the edges
-        side = rng.randint(0, 3)
-        x = rng.uniform(0, W) if side < 2 else (rng.uniform(0, 60) if side == 2 else W - rng.uniform(0, 60))
-        y = rng.uniform(0, 60) if side == 0 else (H - rng.uniform(0, 60) if side == 1 else rng.uniform(0, H))
-        L = rng.uniform(6, 18)
-        for k in range(3):
-            a = k * math.pi / 3 + rng.uniform(0, 1)
-            pygame.draw.line(s, (220, 245, 255, 150), (x - math.cos(a) * L, y - math.sin(a) * L), (x + math.cos(a) * L, y + math.sin(a) * L), 1)
-    return s
+def make_edge_glow(color, peak, reach=0.42):
+    """A smooth coloured vignette: transparent in the middle, rising to `peak` alpha at the frame edge. Built at
+    1/8 resolution and smoothscaled up, so it is one soft gradient with no visible steps or lines."""
+    sw, sh = W // 8, H // 8
+    s = pygame.Surface((sw, sh), pygame.SRCALPHA)
+    for y in range(sh):
+        for x in range(sw):
+            u, v = (x + 0.5) / sw * 2 - 1, (y + 0.5) / sh * 2 - 1
+            d = (u ** 4 + v ** 4) ** 0.25  # superellipse: hugs the 16:9 frame instead of a circle
+            t = min(1.0, max(0.0, (d - (1 - reach)) / reach))
+            s.set_at((x, y), (*color, int(peak * t * t * (3 - 2 * t))))
+    return pygame.transform.smoothscale(s, (W, H))
 
 
 class Art:
@@ -690,7 +687,8 @@ class Art:
         self.bg = load_background() or make_background()
         rng = random.Random(11)
         self.stains = {k: [make_stain(ft.juice, ft.r, rng) for _ in range(3)] for k, ft in FRUITS.items()}
-        self.frost = make_frost()
+        self.frost = make_edge_glow((190, 222, 255), 42, 0.28)  # freeze: cold breath at the edges
+        self.ember = make_edge_glow((255, 120, 36), 110, 0.2)  # frenzy: warm glow at the edges
         self._seals = {}
         self._blots = {}
         self._soft = {}

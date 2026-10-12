@@ -521,6 +521,7 @@ class Stamp:
         self.age = 0.0
         self.landed = False
         self.hold = hold  # stays on screen (results) instead of fading after DUR
+        self._blot_still = None
         self._still = None  # the settled seal, rotated once instead of every frame
 
     def scale(self):
@@ -536,7 +537,12 @@ class Stamp:
         if a >= self.LAND:  # the ink bleeds out from under the stone on impact
             u = min(1.0, (a - self.LAND) / 0.12)
             k = 0.82 + 0.18 * (1 - (1 - u) ** 3)
-            b = pygame.transform.rotozoom(self.blot, self.rot * 0.5, k)
+            if u < 1:
+                b = pygame.transform.rotozoom(self.blot, self.rot * 0.5, k)
+            else:  # settled: rotate once (hold stamps live for the whole results screen)
+                if self._blot_still is None:
+                    self._blot_still = pygame.transform.rotozoom(self.blot, self.rot * 0.5, 1.0)
+                b = self._blot_still
             b.set_alpha(int(153 * fade))  # 60 %
             surf.blit(b, b.get_rect(center=(self.x, self.y)))
         k = self.scale()

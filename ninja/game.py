@@ -55,6 +55,10 @@ def label(surf, fonts, font, s, color, pos, anchor="center", tracking=0, shadow=
     return r
 
 
+def lerp_rgb(a, b, t):
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+
 def emit(app, screen, img, pos):
     """Draw something that glows: into the emissive layer for the GPU bloom, straight onto the frame on the CPU
     path (there the glow layer has already been composited by the time UI is drawn)."""
@@ -577,7 +581,8 @@ class Menu(Scene):
         swatch = pygame.Surface((22, 2))
         swatch.fill(BLADES[name][1])
         screen.blit(swatch, (nxt.right + 4, y - 1))
-        emit(self.app, screen, swatch, (nxt.right + 4, y - 1))
+        if self.app.gpu:  # glow on the GPU only: emit() would draw it onto the CPU frame a second time
+            self.app.add.blit(swatch, (nxt.right + 4, y - 1), special_flags=pygame.BLEND_RGB_ADD)
         locked = [(n, b[3]) for n, b in BLADES.items() if n not in self.unlocked()]
         hint = f"Next: {locked[0][0]} at best {locked[0][1]}" if locked else "All blades unlocked"
         label(screen, f, f.mono13, hint, MUTED, (x0, y + 28), "midleft")
@@ -752,7 +757,12 @@ class Play(Scene):
             self.paused = True
 
     def fx_params(self):
-        return {} if self.paused else self.w.fx_params()
+        if self.paused:
+            return {}
+        p = self.w.fx_params()
+        if self.freeze > 0:  # the cold grade also drains a little colour on the GPU
+            p["saturation"] *= 1 - 0.2 * min(1.0, self.freeze / 0.6)
+        return p
 
     def update(self, dt):
         if self.paused:
@@ -928,13 +938,19 @@ class Play(Scene):
             self.draw_pause(screen)
             return
         w.draw(screen, self.draw_world_extra)
-        if self.freeze > 0:
-            screen.fill((185, 215, 255), special_flags=pygame.BLEND_RGB_MULT)
-            self.app.art.frost.set_alpha(int(255 * min(1, self.freeze / 0.6)))
+        # power-up grades go under the HUD, never over its text
+        if self.freeze > 0:  # a cold grade that fades in and out with the effect
+            k = min(1.0, self.freeze / 0.6)
+            screen.fill(lerp_rgb((255, 255, 255), (190, 214, 240), k), special_flags=pygame.BLEND_RGB_MULT)
+            self.app.art.frost.set_alpha(int(255 * k))
             screen.blit(self.app.art.frost, (0, 0))
-        if self.frenzy > 0:
-            k = int(40 + 25 * math.sin(w.shake.t * 10))
-            pygame.draw.rect(screen, (k, k // 3, 0), screen.get_rect(), 26)
+        if self.frenzy > 0:  # embers at the edges, breathing slowly
+            k = min(1.0, self.frenzy / 0.5)
+            ember = self.app.art.ember
+            gain = 1.0 if self.app.gpu is None else 0.4  # bloom and additive composite amplify it on the GPU
+            ember.set_alpha(int(255 * gain * k * (0.75 + 0.25 * math.sin(w.t * 5))))
+            # it is light, not paint: on the GPU it goes to the glow layer so the bloom carries it
+            (screen if self.app.gpu is None else self.app.add).blit(ember, (0, 0))
         self.draw_hud(screen)
         w.draw_overlay(screen)
         if self.paused:
