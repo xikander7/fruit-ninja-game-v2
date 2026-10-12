@@ -7,7 +7,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-**Play:** hold the left mouse button and swipe. Slice a fruit on the menu to pick a mode.
+**Play:** just move the mouse fast across the fruit, no clicking needed. Slice a fruit on the menu to pick a mode.
 
 | Mode | Rules |
 |------|-------|

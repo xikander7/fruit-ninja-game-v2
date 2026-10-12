@@ -11,7 +11,8 @@ from .entities import Body, Half, seg_hits_circle, rotate_vec
 from .fx import Particles, Stains, Trail, Shake, Popups, Stamp
 from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, LACQUER, BLADES, MODES
 
-SLICE_SPEED = 220  # px/s — slower drags don't cut
+SLICE_SPEED = 300  # px/s — just moving the cursor slices; a slow drift doesn't
+MAX_JUMP = 350  # px in one motion event
 
 
 # ---------------- save data ----------------
@@ -329,7 +330,7 @@ class Menu(Scene):
         locked = [(n, b[3]) for n, b in BLADES.items() if n not in self.unlocked()]
         hint = f"next blade: {locked[0][0]} at best {locked[0][1]}" if locked else "all blades unlocked"
         text(screen, f.util, hint, (190, 175, 150), (W / 2, y + 28), shadow=2)
-        text(screen, f.util, "hold left mouse & swipe to slice  ·  1/2/3 quick start  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
+        text(screen, f.util, "move the mouse fast to slice  ·  1/2/3 quick start  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
              (170, 155, 130), (W / 2, H - 14), shadow=0)
         self.w.draw_overlay(screen)
 
@@ -541,7 +542,7 @@ class Play(Scene):
                             break
             if self.combo:
                 self.combo_t -= dt
-                if self.combo_t <= 0 or not self.app.held:
+                if self.combo_t <= 0:
                     self.finish_combo()
         for b in w.bodies:
             if b.alive and b.gone():
@@ -770,7 +771,7 @@ class App:
         self.add = pygame.Surface((W, H))
         self.trail = Trail()
         self.now = 0.0
-        self.held = False
+        self.speed = 0.0
         self.mouse = (W / 2, H / 2)
         self.segments = []
         self.last_swoosh = 0.0
@@ -795,7 +796,7 @@ class App:
 
     def step(self, dt, events):
         self.now += dt
-        pts = [self.mouse] if self.held else []
+        pts = [self.mouse]
         for e in events:
             if e.type == pygame.QUIT:
                 self.running = False
@@ -805,28 +806,24 @@ class App:
                 self.audio.toggle_mute()
                 self.save["muted"] = self.audio.muted
                 write_save(self.save)
-            elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                self.held = True
-                self.mouse = e.pos
-                pts = [e.pos]
-                self.trail.add(*e.pos, self.now)
-            elif e.type == pygame.MOUSEBUTTONUP and e.button == 1:
-                self.held = False
-                self.trail.cut()
             elif e.type == pygame.MOUSEMOTION:
-                self.mouse = e.pos
-                if self.held:
+                if math.dist(pts[-1], e.pos) > MAX_JUMP:  # cursor re-entered the window: don't cut across the screen
+                    pts = [e.pos]
+                    self.trail.cut()
+                else:
                     pts.append(e.pos)
-                    self.trail.add(*e.pos, self.now)
+                self.mouse = e.pos
+                self.trail.add(*e.pos, self.now)
             elif e.type == pygame.WINDOWFOCUSLOST:
-                self.held = False
                 self.scene.focus_lost()
             if e.type != pygame.QUIT:
                 self.scene.handle(e)
         self.segments = []
+        self.speed = 0.0
         if len(pts) >= 2 and dt > 0:
             path = sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
-            if path / dt > SLICE_SPEED:
+            self.speed = path / dt
+            if self.speed > SLICE_SPEED:
                 self.segments = [(*a, *b) for a, b in zip(pts, pts[1:]) if a != b]
             if path / dt > 1500 and self.now - self.last_swoosh > 0.18:
                 self.last_swoosh = self.now
@@ -849,7 +846,7 @@ class App:
             return
         self.add.fill((0, 0, 0), box)
         self.trail.draw(self.add, colors, self.now)
-        glow = self.art.soft(16 if self.held else 11, colors[1], False)
+        glow = self.art.soft(16 if self.speed > SLICE_SPEED else 11, colors[1], False)
         self.add.blit(glow, glow.get_rect(center=self.mouse), special_flags=pygame.BLEND_RGB_ADD)
         pygame.draw.circle(self.add, colors[2], self.mouse, 3)
         self.screen.blit(self.add, box, box, special_flags=pygame.BLEND_RGB_ADD)

@@ -15,13 +15,15 @@ from ninja.entities import seg_hits_circle  # noqa: E402
 DT = 1 / 60
 
 
+def move(app, p):
+    app.step(DT, [pygame.event.Event(pygame.MOUSEMOTION, pos=p, rel=(0, 0), buttons=(0, 0, 0))])
+
+
 def swipe(app, a, b, steps=4):
-    ev = [pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=a)]
-    app.step(DT, ev)
+    """No clicking: moving the cursor fast is the blade."""
+    move(app, a)
     for i in range(1, steps + 1):
-        p = (a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps)
-        app.step(DT, [pygame.event.Event(pygame.MOUSEMOTION, pos=p, rel=(0, 0), buttons=(1, 0, 0))])
-    app.step(DT, [pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=b)])
+        move(app, (a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps))
 
 
 def run(app, frames):
@@ -35,6 +37,30 @@ class HitMath(unittest.TestCase):
         self.assertFalse(seg_hits_circle(0, 0, 10, 0, 5, 5, 4))
         self.assertTrue(seg_hits_circle(0, 0, 0, 0, 1, 1, 2))  # zero-length segment
         self.assertFalse(seg_hits_circle(0, 0, 10, 0, 20, 0, 4))  # beyond the end
+
+
+class CursorOnly(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        game.SAVE_PATH = Path(self.tmp.name) / "save.json"
+        self.app = game.App()
+
+    def tearDown(self):
+        pygame.quit()
+        self.tmp.cleanup()
+
+    def test_slow_drift_and_teleport_do_not_cut(self):
+        app = self.app
+        b = app.scene.buttons[0]
+        move(app, (b.x - 60, b.y))
+        for i in range(1, 25):  # 4.9 px/frame at 60 fps = 294 px/s, just under SLICE_SPEED
+            move(app, (b.x - 60 + i * 4.9, b.y))
+        self.assertTrue(b.body.alive)
+        move(app, (5, 5))
+        move(app, (b.x + 400, b.y))  # big jump (re-entering the window) is ignored
+        self.assertTrue(b.body.alive)
+        swipe(app, (b.x - 100, b.y), (b.x + 100, b.y))  # a fast flick cuts, no click
+        self.assertFalse(b.body.alive)
 
 
 class FullRun(unittest.TestCase):
