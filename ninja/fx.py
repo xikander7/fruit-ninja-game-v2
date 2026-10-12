@@ -129,26 +129,27 @@ class Particles:
                 p.shape = (ux, uy, nx * side, ny * side)
         if self.art.splashes:  # the splash photo carries the bulk of the liquid: thinner fine spray around it
             n //= 2
-        for i in range(n + 10):
+        for i in range(n + 5):
             side = random.choice((-1, 1))
-            big = i < 10  # a few heavy drops (5-10 px heads); the rest is fine spray
-            sp = 80 + (300 * random.random() ** 1.4 if big else 520 * random.random())
-            a = math.atan2(ny * side, nx * side) + random.uniform(-0.8, 0.8)
+            big = i < 5  # a few heavy drops; the rest is fine spray
+            # thrown off both sides of the cut face: clustered on the normal, wide speed spread so no ring front forms
+            sp = (430 if big else 560) * random.uniform(0.35, 1.0)
+            a = math.atan2(ny * side, nx * side) + random.gauss(0, 0.3 if big else 0.42)
             o = random.uniform(-1, 1) * spread
             vx, vy = math.cos(a) * sp, math.sin(a) * sp - 120
             lead = random.uniform(0.0, 0.05)  # staggered release: juice keeps coming off the face, not in one row
-            self.drop(x + ux * o + vx * lead, y + uy * o + vy * lead, vx, vy, random.uniform(0.55, 1.0),
-                      random.uniform(2.6, 5.0) if big else random.uniform(1.3, 2.6), shade(color, random.uniform(0.72, 1.05)))
-        for side in (1, -1):  # two curved sprays: a fan of droplets with a smooth speed profile reads as one sheet
-            a0 = math.atan2(ny * side, nx * side) + random.uniform(-0.25, 0.25)
-            life = random.uniform(0.45, 0.6)
-            for i in range(12):
-                u = i / 11 - 0.5
-                sp = 380 + 260 * math.cos(math.pi * u) + random.uniform(-30, 30)
-                a = a0 + u * 1.1
-                o = u * spread * 1.6
-                self.drop(x + ux * o, y + uy * o, math.cos(a) * sp, math.sin(a) * sp - 160, life,
-                          1.4 + 2.2 * math.cos(math.pi * u), color)
+            self.drop(x + ux * o + vx * lead, y + uy * o + vy * lead, vx, vy, random.uniform(0.5, 0.9),
+                      random.uniform(2.8, 4.6) if big else random.uniform(1.3, 2.4), shade(color, random.uniform(0.72, 1.05)))
+        for side in (1, -1):  # a tight jet of fine droplets off each side, random in speed, angle and release
+            a0 = math.atan2(ny * side, nx * side)
+            for _ in range(8):
+                sp = 640 * random.uniform(0.35, 1.0)
+                a = a0 + random.gauss(0, 0.22)
+                o = random.gauss(0, 0.5) * spread
+                vx, vy = math.cos(a) * sp, math.sin(a) * sp - 160
+                lead = random.uniform(0.0, 0.04)
+                self.drop(x + ux * o + vx * lead, y + uy * o + vy * lead, vx, vy, random.uniform(0.4, 0.7),
+                          random.uniform(1.3, 2.1), color)
         for _ in range(10):  # mist on the emissive layer: the bloom turns it into a wet glow
             a = random.uniform(0, math.tau)
             sp = random.uniform(90, 220)
@@ -157,20 +158,24 @@ class Particles:
 
     SPLASH_LIFE = 0.35
 
-    def splash(self, x, y, color, dx, dy, r):
-        """One photographed splash at the cut, flung along the blade (either way); a crown 40 % of the time."""
+    SPLASH_CROWN = 0.25  # share of cuts that get the radial crown instead of a directional fling
+
+    def splash(self, x, y, color, nx, ny, r):
+        """One photographed splash at the cut, flung along the cut normal (either side), the same axis the droplets
+        fly; a crown SPLASH_CROWN of the time, set off the fruit so the same-coloured flesh doesn't swallow it."""
         art = self.art
         if not art.splashes:
             return None
         radial = [i for i, d in enumerate(art.splash_dirs) if d is None]
         directional = [i for i, d in enumerate(art.splash_dirs) if d is not None]
-        if radial and (not directional or random.random() < 0.4):
+        side = random.choice((1, -1))
+        if radial and (not directional or random.random() < self.SPLASH_CROWN):
             i = random.choice(radial)
             angle = random.uniform(-20, 20)  # a crown seen from the side: only tilt it a little
+            x, y = x + nx * side * 0.6 * r, y + ny * side * 0.6 * r
         else:
             i = random.choice(directional)
-            side = random.choice((1, -1))
-            angle = math.degrees(math.atan2(-dy * side, dx * side)) - art.splash_dirs[i]
+            angle = math.degrees(math.atan2(-ny * side, nx * side)) - art.splash_dirs[i]
         img = art.splash(i, color, angle)
         k = 2.2 * r / 300 * random.uniform(0.9, 1.2)
         d = art.splash_dirs[i]
@@ -178,7 +183,7 @@ class Particles:
             w, h = art.splashes[i].get_size()
             a = math.radians(d)
             reach = 0.4 * k * (abs(w * math.cos(a)) + abs(h * math.sin(a)))
-            x, y = x + dx * side * reach, y + dy * side * reach
+            x, y = x + nx * side * reach, y + ny * side * reach
         p = self.add(x, y, 0, 0, self.SPLASH_LIFE, k, color, "splash", 0.0)
         if p:
             p.vr = 0
@@ -278,28 +283,36 @@ class Particles:
             k = p.kind
             t = p.life / p.max
             if k == "drop":
-                r = p.size * (0.4 + 0.6 * t)
+                col, c2 = p.color, p.c2
+                if p.size >= 2.8:  # heavy drop: shrinks away and sinks into the dark wall instead of popping off
+                    r = p.size * t ** 0.6
+                    col, c2 = shade(col, 0.35 + 0.65 * t), shade(c2, 0.35 + 0.65 * t)
+                else:
+                    r = p.size * (0.4 + 0.6 * t)
                 vx, vy = p.vx, p.vy
                 sp = math.hypot(vx, vy) or 1
                 dx, dy = vx / sp, vy / sp
                 L = max(2.0, sp * 0.018 * self.blur)
                 tx, ty = p.x - dx * L, p.y - dy * L
                 if r < 1.2:
-                    line(surf, p.color, (tx, ty), (p.x, p.y), 2)
+                    line(surf, col, (tx, ty), (p.x, p.y), 2)
                     continue
-                if r >= 2.2:  # heavy drop: round head, tail tapering to a point along the velocity, specular
-                    tl = L + r * 1.2
-                    pygame.draw.polygon(surf, p.color, [(p.x - dy * r, p.y + dx * r), (p.x - dx * tl, p.y - dy * tl),
-                                                        (p.x + dy * r, p.y - dx * r)])
-                    circle(surf, p.color, (p.x, p.y), r)
-                    circle(surf, p.c2, (p.x - r * 0.3, p.y - r * 0.35), r * 0.45)  # lit side of the bead
-                    circle(surf, tint(p.color, 0.8), (p.x - r * 0.38, p.y - r * 0.42), max(1.0, r * 0.16))
+                if r >= 2.2:  # heavy drop: round head, short tail with a rounded end (a pointed one reads as an arrow)
+                    tl = r * 0.8 + min(L, r * 2.5)
+                    tr = r * 0.45
+                    hx, hy = p.x - dx * tl, p.y - dy * tl
+                    pygame.draw.polygon(surf, col, [(p.x - dy * r, p.y + dx * r), (hx - dy * tr, hy + dx * tr),
+                                                    (hx + dy * tr, hy - dx * tr), (p.x + dy * r, p.y - dx * r)])
+                    circle(surf, col, (hx, hy), tr)
+                    circle(surf, col, (p.x, p.y), r)
+                    circle(surf, c2, (p.x - r * 0.3, p.y - r * 0.35), r * 0.45)  # lit side of the bead
+                    circle(surf, tint(col, 0.8), (p.x - r * 0.38, p.y - r * 0.42), max(1.0, r * 0.16))
                     continue
                 # velocity-stretched capsule: round head, thinner tail, light core line along it
-                line(surf, p.color, (tx, ty), (p.x, p.y), max(2, int(r * 1.7)))
-                circle(surf, p.color, (p.x, p.y), r)
-                circle(surf, p.color, (tx, ty), r * 0.6)
-                line(surf, p.c2, (tx, ty), (p.x - vx / sp * r * 0.4, p.y - vy / sp * r * 0.4), max(1, int(r * 0.5)))
+                line(surf, col, (tx, ty), (p.x, p.y), max(2, int(r * 1.7)))
+                circle(surf, col, (p.x, p.y), r)
+                circle(surf, col, (tx, ty), r * 0.6)
+                line(surf, c2, (tx, ty), (p.x - vx / sp * r * 0.4, p.y - vy / sp * r * 0.4), max(1, int(r * 0.5)))
             elif k == "mote":
                 tw = 0.55 + 0.45 * math.sin(p.life * p.vr + p.rot)
                 fade = min(1.0, t * 4, (1 - t) * 4)

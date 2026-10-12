@@ -117,13 +117,32 @@ class SplashCutTests(unittest.TestCase):
     def test_cut_spawns_one_splash(self):
         splashes, drops = self.cut_one()
         self.assertEqual(splashes, 1)
-        self.assertEqual(drops, 10 + 35 // 2 + 24)  # heavy drops kept, fine spray halved, both fans kept
+        self.assertEqual(drops, 5 + 35 // 2 + 16)  # heavy drops kept, fine spray halved, both jets kept
 
     def test_no_splash_without_sprites(self):
         self.app.art.splashes, self.app.art.splash_dirs = [], []
         splashes, drops = self.cut_one()
         self.assertEqual(splashes, 0)
-        self.assertEqual(drops, 10 + 35 + 24)  # the full spray as before
+        self.assertEqual(drops, 5 + 35 + 16)  # the full spray
+
+    def test_splash_flies_along_the_cut_normal(self):
+        import math
+        import random
+        random.seed(4)
+        w = game.World(self.app)
+        nx, ny = 0.6, 0.8  # unit normal; the blade ran along (0.8, -0.6)
+        crowns, n = 0, 400
+        for _ in range(n):
+            w.particles.items = []
+            p = w.particles.splash(640, 360, (225, 35, 55), nx, ny, 40)
+            ox, oy = p.x - 640, p.y - 360
+            self.assertAlmostEqual(ox * 0.8 + oy * -0.6, 0, places=6)  # no offset along the blade
+            off = math.hypot(ox, oy)
+            if abs(off - 0.6 * 40) < 1e-6:  # the crown sits 0.6 r off the fruit, either side
+                crowns += 1
+            else:  # a directional fling is pushed out along the normal so its stream root sits at the fruit
+                self.assertGreater(off, 5)
+        self.assertLess(abs(crowns / n - 0.25), 0.06)
 
 
 if __name__ == "__main__":
