@@ -1,5 +1,6 @@
-"""Procedural art: every sprite is painted at startup, no image files needed."""
+"""Art: photoreal sprites from assets/sprites when present, else procedural drawing painted at startup."""
 import math
+import os
 import random
 from dataclasses import dataclass
 
@@ -7,6 +8,7 @@ import pygame
 
 from .settings import W, H, WASHI, HANKO, LACQUER, CEDAR
 
+SPRITE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "sprites")
 SS = 2  # supersample factor, smoothscaled down for anti-aliasing
 
 
@@ -296,11 +298,31 @@ def _down(s):
     return pygame.transform.smoothscale(s, (max(1, w // SS), max(1, h // SS)))
 
 
+def load_sprite(name, ext="png"):
+    """Loaded sprite surface, or None when the file is missing (callers fall back to procedural art)."""
+    path = os.path.join(SPRITE_DIR, f"{name}.{ext}")
+    if not os.path.isfile(path):
+        return None
+    img = pygame.image.load(path)
+    return img.convert_alpha() if ext == "png" else img.convert()
+
+
+def _disc(img, d):
+    out = pygame.Surface((d, d), pygame.SRCALPHA)
+    out.blit(pygame.transform.smoothscale(img, (d, d)), (0, 0))
+    mask = pygame.Surface((d, d), pygame.SRCALPHA)
+    pygame.draw.circle(mask, (255, 255, 255, 255), (d / 2, d / 2), d / 2)
+    out.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return out
+
+
 class FruitArt:
     """whole, half (cut face at the bottom edge, outward = up), face disc, shadow."""
 
     def __init__(self, ft):
         self.ft = ft
+        if self._load_sprites(ft):
+            return
         rng = random.Random(ft.name)
         r = ft.r * SS
         size = int(ft.r * 2.9) * SS
@@ -349,6 +371,30 @@ class FruitArt:
         self.shadow = make_shadow(self.whole)
         self.half_shadow = make_shadow(self.half)
 
+    def _load_sprites(self, ft):
+        whole = load_sprite(ft.name)
+        if ft.special:  # specials reuse the banana half, tinted with their juice colour
+            half = load_sprite("banana_half")
+            if half is not None:
+                half = half.copy()
+                half.fill((*ft.juice, 255), special_flags=pygame.BLEND_RGB_MULT)
+        else:
+            half = load_sprite(ft.name + "_half")
+        if whole is None or half is None:
+            return False
+        self.whole, self.half = whole, half
+        # every generated half has the cut face up and the rind dome down -> outward is 270 deg
+        self.half_local = 270
+        if ft.name == "watermelon":
+            hw, hh = half.get_size()
+            crop = half.subsurface((0, 0, hw, max(1, int(hh * 0.45)))).copy()
+            self.face = _disc(crop, ft.r * 2)
+        else:
+            self.face = _down(_face(ft, int(ft.r * SS * 2)))
+        self.shadow = make_shadow(self.whole)
+        self.half_shadow = make_shadow(self.half)
+        return True
+
 
 def make_shadow(img, alpha=90):
     sil = img.copy()
@@ -358,6 +404,21 @@ def make_shadow(img, alpha=90):
     blur = pygame.transform.smoothscale(small, (w, h))
     blur.fill((255, 255, 255, alpha), special_flags=pygame.BLEND_RGBA_MULT)  # baked in: rotozoom drops set_alpha
     return blur
+
+
+def load_bomb():
+    """(sprite, fuse tip offset from centre, shadow) or None. The tip is the topmost opaque pixel."""
+    img = load_sprite("bomb")
+    if img is None:
+        return None
+    mask = pygame.mask.from_surface(img, 8)
+    w, h = img.get_size()
+    for y in range(h):
+        xs = [x for x in range(w) if mask.get_at((x, y))]
+        if xs:
+            tip = (sum(xs) / len(xs) - w / 2, y - h / 2)
+            return img, tip, make_shadow(img)
+    return None
 
 
 def make_bomb(r=38):
@@ -411,6 +472,28 @@ def make_stain(color, r, rng):
     return s
 
 
+def _vignette(bg):
+    vig = pygame.Surface((W, H))
+    vig.fill((95, 95, 95))
+    for i in range(30):
+        t = i / 29
+        v = int(95 + 160 * t ** 0.6)
+        rect = pygame.Rect(0, 0, W * 1.5 * (1 - t * 0.55), H * 1.6 * (1 - t * 0.55))
+        rect.center = (W / 2, H * 0.42)
+        pygame.draw.ellipse(vig, (v, v, v), rect)
+    bg.blit(vig, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+
+
+def load_background():
+    """Photo wall darkened so it sits behind the fruit, plus the vignette; None if the file is missing."""
+    bg = load_sprite("background", "jpg")
+    if bg is None:
+        return None
+    bg.fill((165, 150, 140), special_flags=pygame.BLEND_RGB_MULT)
+    _vignette(bg)
+    return bg
+
+
 def make_background(seed=7):
     rng = random.Random(seed)
     bg = pygame.Surface((W, H))
@@ -444,15 +527,7 @@ def make_background(seed=7):
         rect.center = (W / 2, H * 0.02)
         pygame.draw.ellipse(light, (v, int(v * 0.75), int(v * 0.45)), rect)
     bg.blit(light, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
-    vig = pygame.Surface((W, H))
-    vig.fill((95, 95, 95))
-    for i in range(30):
-        t = i / 29
-        v = int(95 + 160 * t ** 0.6)
-        rect = pygame.Rect(0, 0, W * 1.5 * (1 - t * 0.55), H * 1.6 * (1 - t * 0.55))
-        rect.center = (W / 2, H * 0.42)
-        pygame.draw.ellipse(vig, (v, v, v), rect)
-    bg.blit(vig, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+    _vignette(bg)
     return bg
 
 
@@ -523,8 +598,8 @@ class Art:
     def __init__(self):
         self.fonts = Fonts()
         self.fruits = {k: FruitArt(ft) for k, ft in FRUITS.items()}
-        self.bomb, self.bomb_tip, self.bomb_shadow = make_bomb()
-        self.bg = make_background()
+        self.bomb, self.bomb_tip, self.bomb_shadow = load_bomb() or make_bomb()
+        self.bg = load_background() or make_background()
         rng = random.Random(11)
         self.stains = {k: [make_stain(ft.juice, ft.r, rng) for _ in range(3)] for k, ft in FRUITS.items()}
         self.frost = make_frost()
