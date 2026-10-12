@@ -5,11 +5,11 @@ import random
 
 import pygame
 
-from .art import Art, FRUITS, REGULAR, WEIGHTS, SPECIALS
+from .art import Art, Fonts, FRUITS, REGULAR, WEIGHTS, SPECIALS, _font
 from .audio import Audio
 from .entities import Body, Half, seg_hits_circle, rotate_vec
 from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade
-from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, LACQUER, BLADES, MODES
+from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES
 
 SLICE_SPEED = 300  # px/s — just moving the cursor slices; a slow drift doesn't
 MAX_JUMP = 350  # px in one motion event
@@ -42,16 +42,82 @@ def write_save(data):
         pass
 
 
-def text(surf, font, s, color, pos, anchor="center", shadow=3, alpha=255):
-    img = font.render(s, True, color)
+def label(surf, fonts, font, s, color, pos, anchor="center", tracking=0, shadow=True, alpha=255):
+    """Cached text with a soft shadow, so it reads over the photoreal wall without a hard outline."""
+    img = fonts.text(font, s, color, tracking)
     r = img.get_rect(**{anchor: pos})
     if shadow:
-        sh = font.render(s, True, (0, 0, 0))
-        sh.set_alpha(min(alpha, 170))
-        surf.blit(sh, r.move(shadow, shadow))
+        sh = fonts.shadow(font, s, tracking)
+        sh.set_alpha(int(alpha * 0.9))
+        surf.blit(sh, sh.get_rect(center=(r.centerx, r.centery + 3)))
     img.set_alpha(alpha)
     surf.blit(img, r)
     return r
+
+
+def emit(app, screen, img, pos):
+    """Draw something that glows: into the emissive layer for the GPU bloom, straight onto the frame on the CPU
+    path (there the glow layer has already been composited by the time UI is drawn)."""
+    app.add.blit(img, pos, special_flags=pygame.BLEND_RGB_ADD)
+    if app.gpu is None:
+        screen.blit(img, pos, special_flags=pygame.BLEND_RGB_ADD)
+
+
+def blurred(surf, tint):
+    """A frosted backdrop: downscale x8, smooth, upscale, then darken so type sits cleanly on top."""
+    small = pygame.transform.smoothscale(surf, (W // 8, H // 8))
+    small = pygame.transform.gaussian_blur(small, 2)
+    out = pygame.transform.smoothscale(small, (W, H))
+    out.fill(tint, special_flags=pygame.BLEND_RGB_MULT)
+    return out
+
+
+_BRUSH = {}
+
+
+def brush_x(size, color, outline=False):
+    """A strike mark painted as two brush strokes: blunt where the brush lands, tapering to a point as it lifts.
+    Supersampled 3x for clean edges; cached per (size, colour, outline)."""
+    key = (size, color, outline)
+    if key in _BRUSH:
+        return _BRUSH[key]
+    ss = 3
+    d = size * ss
+    m = pygame.Surface((d, d), pygame.SRCALPHA)
+    p = d * 0.1
+    for x0, y0, x1, y1, bow, wmax in ((p, p * 1.3, d - p, d - p * 0.8, 0.05, 0.17), (d - p * 1.2, p, p * 1.1, d - p * 1.1, -0.04, 0.14)):
+        L = math.hypot(x1 - x0, y1 - y0)
+        ux, uy = (x1 - x0) / L, (y1 - y0) / L
+        nx, ny = -uy, ux
+        left, right = [], []
+        for i in range(21):
+            t = i / 20
+            w = d * wmax * (0.65 + 0.35 * min(1.0, t / 0.18)) * max(0.03, 1 - t ** 1.8) / 2
+            cx = x0 + ux * L * t + nx * bow * L * math.sin(math.pi * t)
+            cy = y0 + uy * L * t + ny * bow * L * math.sin(math.pi * t)
+            left.append((cx + nx * w, cy + ny * w))
+            right.append((cx - nx * w, cy - ny * w))
+        pygame.draw.polygon(m, (*color, 255), left + right[::-1])
+    if outline:  # trace the union of both strokes, so the crossing doesn't show inside an empty mark
+        pts = pygame.mask.from_surface(m).outline()
+        m = pygame.Surface((d, d), pygame.SRCALPHA)
+        if len(pts) > 2:
+            pygame.draw.lines(m, (*color, 255), True, pts, ss + 1)
+    img = pygame.transform.smoothscale(m, (size, size))
+    _BRUSH[key] = img
+    return img
+
+
+_RINGS = {}
+
+
+def hairline_ring(r):
+    """A 1 px anti-aliased gold circle (cached: one per radius)."""
+    if r not in _RINGS:
+        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.aacircle(s, GOLD, (r + 2, r + 2), r, 1)
+        _RINGS[r] = s
+    return _RINGS[r]
 
 
 # ---------------- world: everything that lives on the dojo wall ----------------
@@ -137,8 +203,8 @@ class World:
     def time_scale(self):
         return 1.0 - 0.7 * self.slow_k()  # 0.3 at full slow-mo
 
-    def stamp(self, glyph, caption, x, y, size=120, color=GOLD):
-        self.stamps.append(Stamp(self.art, glyph, caption, x, y, size, color))
+    def stamp(self, glyph, caption, x, y, size=120, color=WASHI, bonus=None, hold=False):
+        self.stamps.append(Stamp(self.art, glyph, caption, x, y, size, color, bonus, hold))
 
     def update(self, dt, real_dt):
         # camera/post effects run on real time so they play out even through hit-stop and slow-mo
@@ -255,18 +321,22 @@ class World:
 class SliceButton:
     """A fruit you cut to choose. Menus in this dojo have no buttons."""
 
-    def __init__(self, world, kind, x, y, glyph, title, sub="", sub2=""):
+    def __init__(self, world, kind, x, y, glyph, title, sub="", sub2="", ring=80):
         self.world, self.kind = world, kind
         self.x, self.y = x, y
         self.glyph, self.title, self.sub, self.sub2 = glyph, title, sub, sub2
+        self.ring = ring
         self.body = world.throw(kind, x, y, 0, 0, static=True)
         self.t = random.uniform(0, 6)
         self.cut_at = None
+        self.hover = 0.0
 
-    def update(self, dt, segments):
+    def update(self, dt, segments, mouse=None):
         self.t += dt
+        near = mouse is not None and math.dist(mouse, (self.x, self.y)) < self.ring + 20
+        self.hover = min(1.0, self.hover + dt * 6) if near else max(0.0, self.hover - dt * 4)
         if self.body.alive:
-            self.body.y = self.y + math.sin(self.t * 2.2) * 7
+            self.body.y = self.y + math.sin(self.t * 1.8) * 4
             for seg in segments:
                 if seg_hits_circle(*seg, self.body.x, self.body.y, self.body.r * 1.25):
                     self.world.cut(self.body, *seg)
@@ -277,20 +347,25 @@ class SliceButton:
 
     def draw(self, surf):
         f = self.world.art.fonts
-        r = self.body.r + 30
-        rect = pygame.Rect(0, 0, r * 2, r * 2)
-        rect.center = (self.x, self.y)
-        spin = self.t * (0.6 if self.body.alive else 3)
-        for k in range(14):
-            a = spin + k * math.tau / 14
-            pygame.draw.arc(surf, (205, 185, 150), rect, a, a + 0.24, 3)
-        seal = self.world.art.seal(self.glyph, 44)
-        surf.blit(seal, seal.get_rect(center=(self.x - r - 10, self.y - r + 6)))
-        text(surf, f.mid, self.title, WASHI, (self.x, self.y + r + 30))
+        R = self.ring
+        ring = hairline_ring(R)
+        if self.cut_at is None:
+            ring.set_alpha(int(110 + 145 * self.hover))
+            surf.blit(ring, ring.get_rect(center=(self.x, self.y)))
+        else:  # the ring opens out and is gone, like a ripple from the cut
+            u = min(1.0, (self.t - self.cut_at) / 0.35)
+            if u < 1:
+                img = pygame.transform.smoothscale_by(ring, 1 + 0.25 * u)
+                img.set_alpha(int(255 * (1 - u)))
+                surf.blit(img, img.get_rect(center=(self.x, self.y)))
+        seal = self.world.art.seal(self.glyph, 40)
+        surf.blit(seal, seal.get_rect(center=(self.x - R * 0.74, self.y - R * 0.74)))
+        y = self.y + R + 34
+        label(surf, f, f.mode, self.title, WASHI, (self.x, y), tracking=1)
         if self.sub:
-            text(surf, f.util, self.sub, (215, 200, 170), (self.x, self.y + r + 62), shadow=2)
+            label(surf, f, f.mono15, self.sub, MUTED, (self.x, y + 34))
         if self.sub2:
-            text(surf, f.small, self.sub2, GOLD, (self.x, self.y + r + 90), shadow=2)
+            label(surf, f, f.best, self.sub2, GOLD, (self.x, y + 64))
 
 
 class Scene:
@@ -313,19 +388,72 @@ class Scene:
 # ---------------- menu ----------------
 
 class Menu(Scene):
+    SETTLE = 1.2  # s for the background to drift from 1.04x to rest
+    SWEEP_AT, SWEEP = 0.25, 0.7  # the katana light crossing the title
+
     def __init__(self, app):
         self.app = app
         self.w = World(app)
         best = app.save["best"]
         self.buttons = []
-        for (mode, kind), x in zip((("classic", "watermelon"), ("arcade", "dragonfruit"), ("zen", "peach")), (W * 0.24, W * 0.5, W * 0.76)):
+        for (mode, kind), x in zip((("classic", "watermelon"), ("arcade", "dragonfruit"), ("zen", "peach")), (W * 0.25, W * 0.5, W * 0.75)):
             m = MODES[mode]
-            b = SliceButton(self.w, kind, x, H * 0.52, m["glyph"], m["title"], m["hint"], f"BEST {best[mode]}")
+            b = SliceButton(self.w, kind, x, 388, m["glyph"], m["title"], m["hint"], f"Best {best[mode]}")
             b.mode = mode
             self.buttons.append(b)
         self.chosen = None
         self.t = 0.0
         self.arrow_rects = []
+        # background: held slightly oversize so it can drift with the mouse without showing an edge
+        self.bg_src = self.w.bg
+        self.bg_base = 1.03
+        self.bg_rest = pygame.transform.smoothscale_by(self.bg_src, self.bg_base)
+        self.par = [0.0, 0.0]
+        self.set_bg()
+        f = app.art.fonts
+        self.title = f.text(f.title, "Fruit Ninja", WASHI, 2)
+        self.title_sh = f.shadow(f.title, "Fruit Ninja", 2)
+        self.title_rect = self.title.get_rect(center=(W / 2, 122))
+        # the same letters, warm white on black: the part under the sweep is added to the glow layer as a glint
+        self.title_glint = pygame.Surface(self.title.get_size())
+        self.title_glint.blit(f.text(f.title, "Fruit Ninja", (255, 240, 214), 2), (0, 0))
+        self.streak = self.make_streak(self.title.get_height() + 70)
+        self.band = self.make_band(120)
+
+    @staticmethod
+    def make_streak(h):
+        """A slanted blade of light: a hot core with a soft falloff, fading out at both tips."""
+        w = 48
+        s = pygame.Surface((w, h))
+        for dx in range(-w // 2, w // 2):
+            k = math.exp(-(dx / 3.0) ** 2) + 0.35 * math.exp(-(dx / 11.0) ** 2)
+            pygame.draw.line(s, shade((255, 236, 205), min(1.0, k)), (w // 2 + dx, 0), (w // 2 + dx, h))
+        fade = pygame.Surface((w, h))
+        for y in range(h):
+            fade.fill(shade((255, 255, 255), math.sin(math.pi * y / (h - 1)) ** 0.8), (0, y, w, 1))
+        s.blit(fade, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+        return pygame.transform.rotate(s.convert_alpha(), -14)  # alpha: the rotated corners come out clear, not grey
+
+    @staticmethod
+    def make_band(w):
+        """Horizontal falloff multiplied into the title glint, so only the letters right at the streak catch light."""
+        s = pygame.Surface((w, 1))
+        for x in range(w):
+            s.set_at((x, 0), shade((255, 255, 255), math.exp(-((x - w / 2) / (w / 6)) ** 2)))
+        return s
+
+    def set_bg(self):
+        """Entry drift (1.04x -> 1.0x of rest scale, eased) then a gentle parallax against the mouse."""
+        u = min(1.0, self.t / self.SETTLE)
+        if u < 1.0:
+            k = 1 + 0.04 * (1 - u) ** 3
+            big = pygame.transform.smoothscale_by(self.bg_src, self.bg_base * k)
+        else:
+            big = self.bg_rest
+        bw, bh = big.get_size()
+        x = int(min(max((bw - W) / 2 + self.par[0], 0), bw - W))
+        y = int(min(max((bh - H) / 2 + self.par[1], 0), bh - H))
+        self.w.bg = big.subsurface((x, y, W, H))
 
     def unlocked(self):
         top = max(self.app.save["best"].values())
@@ -350,6 +478,7 @@ class Menu(Scene):
                 b = self.buttons[e.key - pygame.K_1]
                 self.w.cut(b.body, b.x - 80, b.y - 60, b.x + 80, b.y + 60)
                 self.w.stamp(b.glyph, b.title, b.x, b.y - 10, 110)
+                b.cut_at = b.t
                 self.chosen, self.chosen_t = b.mode, 0.0
             elif e.key in (pygame.K_LEFT, pygame.K_a):
                 self.cycle_blade(-1)
@@ -364,9 +493,15 @@ class Menu(Scene):
 
     def update(self, dt):
         self.t += dt
+        mx, my = self.app.mouse
+        tx, ty = -(mx / W - 0.5) * 20, -(my / H - 0.5) * 20  # +-10 px, against the cursor like a deeper layer
+        k = min(1.0, dt * 3)
+        self.par[0] += (tx - self.par[0]) * k
+        self.par[1] += (ty - self.par[1]) * k
+        self.set_bg()
         self.w.update(dt, dt)
         for b in self.buttons:
-            if b.update(dt, self.app.segments) and not self.chosen:
+            if b.update(dt, self.app.segments, self.app.mouse) and not self.chosen:
                 self.chosen, self.chosen_t = b.mode, 0.0
         if self.chosen:
             self.chosen_t += dt
@@ -378,33 +513,78 @@ class Menu(Scene):
     def fx_params(self):
         return self.w.fx_params()
 
+    def draw_title(self, screen):
+        f = self.app.art.fonts
+        r = self.title_rect
+        u = (self.t - self.SWEEP_AT) / self.SWEEP
+        if u <= 0:
+            return
+        e = 1 - (1 - min(u, 1.0)) ** 2  # the cut decelerates slightly as it leaves the last letter
+        sx = r.left - 40 + (r.width + 80) * e  # streak position; letters to its left are revealed
+        w = int(min(r.width, max(0, sx - r.left))) if u < 1 else r.width
+        if w > 0:
+            self.title_sh.set_alpha(230)
+            screen.blit(self.title_sh, (r.left - 6, r.top - 3), (0, 0, w + 6, self.title_sh.get_height()))
+            self.title.set_alpha(255)
+            screen.blit(self.title, r, (0, 0, w, r.height))
+        glow = max(0.0, 1 - max(0.0, u - 1) / 0.25)  # the light lingers a moment after the cut, then is gone
+        if glow > 0:
+            st = self.streak
+            if glow < 1:
+                st = st.copy()
+                st.fill(shade((255, 255, 255), glow), special_flags=pygame.BLEND_RGB_MULT)
+            emit(self.app, screen, st, st.get_rect(center=(sx, r.centery)).topleft)
+            bw = self.band.get_width()
+            x0 = int(sx - r.left - bw / 2)
+            clip = pygame.Rect(x0, 0, bw, r.height).clip(self.title_glint.get_rect())
+            if clip.w > 0:
+                g = self.title_glint.subsurface(clip).copy()
+                band = pygame.transform.scale(self.band, (bw, r.height))
+                g.blit(band, (0, 0), (clip.x - x0, 0, clip.w, r.height), special_flags=pygame.BLEND_RGB_MULT)
+                if glow < 1:
+                    g.fill(shade((255, 255, 255), glow), special_flags=pygame.BLEND_RGB_MULT)
+                emit(self.app, screen, g, (r.left + clip.x, r.top))
+        # subtitle settles in once the title is cut
+        a = int(255 * max(0.0, min(1.0, (u - 0.9) / 0.5)))
+        if a:
+            sub = label(screen, f, f.mono15, "NIGHT DOJO", GOLD, (W / 2, r.bottom + 14), tracking=7, alpha=a)
+            line = pygame.Surface((44, 1))
+            line.fill(GOLD)
+            line.set_alpha(a // 2)
+            screen.blit(line, (sub.left - 62, sub.centery))
+            screen.blit(line, (sub.right + 18, sub.centery))
+
     def draw(self, screen):
         f = self.app.art.fonts
         self.w.draw(screen)
+        self.draw_title(screen)
         for b in self.buttons:
             b.draw(screen)
-        # title: the one place the type gets loud
-        drop = max(0.0, 1 - self.t / 0.5) ** 3 * -120
-        r = text(screen, f.huge, "FRUIT NINJA", WASHI, (W / 2, 120 + drop), shadow=6)
-        pygame.draw.line(screen, GOLD, (r.left + 8, r.bottom + 4), (r.right - 8, r.bottom + 4), 2)
-        text(screen, f.small, "N I G H T   D O J O", GOLD, (W / 2, r.bottom + 26), shadow=2)
-        # blade picker
+        # blade picker: small, bottom-left
         name = self.app.save["blade"]
-        col = BLADES[name][1]
-        y = H - 78
-        lbl = text(screen, f.small, f"BLADE  ·  {name.upper()}", col, (W / 2, y), shadow=2)
+        x0, y = 48, H - 66
+        label(screen, f, f.mono12, "BLADE", MUTED, (x0, y - 30), "midleft", tracking=4)
         self.arrow_rects = []
-        for step, cx in ((-1, lbl.left - 34), (1, lbl.right + 34)):
-            rr = pygame.Rect(0, 0, 44, 44)
-            rr.center = (cx, y)
+        prev = pygame.Rect(0, 0, 36, 36)
+        prev.center = (x0 + 4, y)
+        nm = label(screen, f, f.best, name, WASHI, (x0 + 24, y), "midleft")
+        nxt = pygame.Rect(0, 0, 36, 36)
+        nxt.center = (nm.right + 20, y)
+        for step, rr in ((-1, prev), (1, nxt)):
             self.arrow_rects.append((step, rr))
-            pts = [(cx - 8 * step, y - 11), (cx + 9 * step, y), (cx - 8 * step, y + 11)]
-            pygame.draw.polygon(screen, col, pts)
+            cx, cy = rr.center
+            pygame.draw.aalines(screen, MUTED, False, [(cx - 3 * step, cy - 7), (cx + 4 * step, cy), (cx - 3 * step, cy + 7)])
+        swatch = pygame.Surface((22, 2))
+        swatch.fill(BLADES[name][1])
+        screen.blit(swatch, (nxt.right + 4, y - 1))
+        emit(self.app, screen, swatch, (nxt.right + 4, y - 1))
         locked = [(n, b[3]) for n, b in BLADES.items() if n not in self.unlocked()]
-        hint = f"next blade: {locked[0][0]} at best {locked[0][1]}" if locked else "all blades unlocked"
-        text(screen, f.util, hint, (190, 175, 150), (W / 2, y + 28), shadow=2)
-        text(screen, f.util, "move the mouse fast to slice  ·  1/2/3 quick start  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
-             (170, 155, 130), (W / 2, H - 14), shadow=0)
+        hint = f"Next: {locked[0][0]} at best {locked[0][1]}" if locked else "All blades unlocked"
+        label(screen, f, f.mono13, hint, MUTED, (x0, y + 28), "midleft")
+        # controls: bottom-right, quiet
+        label(screen, f, f.mono13, "Move the cursor fast to slice a fruit", MUTED, (W - 48, y), "midright")
+        label(screen, f, f.mono13, "1 2 3 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
+              MUTED, (W - 48, y + 28), "midright")
         self.w.draw_overlay(screen)
 
 
@@ -431,10 +611,11 @@ class Play(Scene):
         self.stats = {"sliced": 0, "best_combo": 0, "bombs": 0, "missed": 0}
         self.state, self.state_t = "ready", 0.0
         self.paused = False
-        self.score_pop = 0.0
+        self.pause_bg = None  # blurred snapshot, made on the first paused frame
+        self.shown = 0.0  # the score as displayed: rolls toward self.score
         self.last_tick = None
         m = MODES[mode]
-        self.w.stamp(m["glyph"], "READY", W / 2, H / 2 - 20, 150)
+        self.w.stamp(m["glyph"], "Ready", W / 2, H / 2 - 20, 150)
         app.audio.play("gong")
 
     # --- spawning ---
@@ -478,13 +659,12 @@ class Play(Scene):
     # --- scoring ---
     def add_score(self, n):
         self.score += n
-        self.score_pop = 0.18
         if self.mode == "classic":
             while self.score >= self.next_life:
                 self.next_life += 100
                 if self.strikes > 0:
                     self.strikes -= 1
-                    self.w.popups.add("+1 LIFE", W - 150, 110, GOLD, True)
+                    self.w.popups.add("+1 life", W - 120, 112, GOLD, True)
                     self.app.audio.play("life")
 
     def hit(self, b, seg):
@@ -504,7 +684,7 @@ class Play(Scene):
         pts = b.ft.points * mult
         if self.mode == "arcade" and not b.special and random.random() < 0.06:
             pts += 10
-            w.popups.add("CRITICAL +10", b.x, b.y - 50, GOLD, True)
+            w.popups.add("Critical +10", b.x, b.y - 50, GOLD, True)
             w.particles.sparks(b.x, b.y, GOLD, 30, 600)
             w.hitstop = max(w.hitstop, 0.06)
         else:
@@ -519,10 +699,10 @@ class Play(Scene):
             w.slow()
         self.combo_pos = (b.x, b.y)
         if b.special:
-            name, glyph, cap, dur = {"freeze": ("freeze", "凍", "FREEZE", 6.0), "frenzy": ("frenzy", "嵐", "FRENZY", 4.5),
-                                     "double": ("double", "倍", "DOUBLE SCORE", 8.0)}[b.special]
+            name, glyph, cap, dur = {"freeze": ("freeze", "凍", "Freeze", 6.0), "frenzy": ("frenzy", "嵐", "Frenzy", 4.5),
+                                     "double": ("double", "倍", "Double score", 8.0)}[b.special]
             setattr(self, name, dur)
-            w.stamp(glyph, cap, b.x, b.y, 120, b.ft.juice)
+            w.stamp(glyph, cap, b.x, b.y, 120)
             w.particles.sparks(b.x, b.y, b.ft.juice, 50, 800)
             self.app.audio.play("power")
 
@@ -538,7 +718,7 @@ class Play(Scene):
         if self.combo >= 3:
             bonus = self.combo * (2 if self.double > 0 else 1)
             self.add_score(bonus)
-            self.w.stamp("連", f"{self.combo} FRUIT COMBO  +{bonus}", *self.combo_pos, 100 + min(60, self.combo * 6))
+            self.w.stamp("連", f"{self.combo} fruit combo", *self.combo_pos, 100 + min(60, self.combo * 6), bonus=f"+{bonus}")
             self.w.hitstop = max(self.w.hitstop, 0.05)
             self.app.audio.play("combo")
         self.stats["best_combo"] = max(self.stats["best_combo"], self.combo)
@@ -572,17 +752,21 @@ class Play(Scene):
             self.paused = True
 
     def fx_params(self):
-        return self.w.fx_params()
+        return {} if self.paused else self.w.fx_params()
 
     def update(self, dt):
         if self.paused:
             self.app.audio.fuse(False)
             return
+        self.pause_bg = None
         w = self.w
         # game clock: only freeze slows the timer, spawning and difficulty ramp; slow-mo only slows the world
         wdt = dt * (0.4 if self.freeze > 0 else 1.0)
         w.update(wdt * w.time_scale(), dt)
-        self.score_pop = max(0.0, self.score_pop - dt)
+        # rolling counter: ease toward the real score (also downward after a bomb), snapping once close
+        self.shown += (self.score - self.shown) * min(1.0, dt * 12)
+        if abs(self.score - self.shown) < 0.5:
+            self.shown = float(self.score)
         self.strike_pop = [max(0.0, p - dt) for p in self.strike_pop]
         for m in self.misses:
             m[1] += dt
@@ -606,7 +790,7 @@ class Play(Scene):
                 if self.time <= 0:
                     self.time = 0.0
                     self.state, self.state_t = "ending", 0.0
-                    w.stamp("時", "TIME'S UP", W / 2, H / 2 - 20, 150, WASHI)
+                    w.stamp("時", "Time's up", W / 2, H / 2 - 20, 150)
                     self.app.audio.play("gong")
             for q in self.queue:
                 q[0] -= wdt
@@ -662,15 +846,87 @@ class Play(Scene):
         self.app.go(lambda: GameOver(self.app, self, snap))
 
     def draw_world_extra(self, L, add):
-        for x, age in self.misses:
+        for x, age in self.misses:  # a red brush mark where the fruit fell
             k = min(1.0, age / 0.12)
-            s = 22 * (1.6 - 0.6 * k)
-            y = H - 46
-            for a, b in (((-1, -1), (1, 1)), ((1, -1), (-1, 1))):
-                pygame.draw.line(L, HANKO, (x + a[0] * s, y + a[1] * s), (x + b[0] * s, y + b[1] * s), 8)
+            a = int(255 * min(1.0, (1.2 - age) / 0.4))
+            img = brush_x(44, HANKO)
+            if k < 1:
+                img = pygame.transform.smoothscale_by(img, 1.5 - 0.5 * k)
+            img.set_alpha(a)
+            L.blit(img, img.get_rect(center=(x, H - 46)))
+
+    def draw_hud(self, screen):
+        f = self.app.art.fonts
+        # score: left, gold, the number rolls toward the real value
+        label(screen, f, f.mono12, "SCORE", MUTED, (42, 34), "midleft", tracking=4)
+        sr = label(screen, f, f.score, str(round(self.shown)), GOLD, (38, 44), "topleft")
+        best = max(self.best_prev, self.score)
+        label(screen, f, f.mono13, f"Best {best}", MUTED, (42, sr.bottom + 6), "midleft")
+        if self.mode == "classic":  # strikes: three brush marks, empty until missed
+            for i in range(3):
+                cx = W - 66 - (2 - i) * 52
+                if i < self.strikes:
+                    img = brush_x(40, HANKO)
+                    p = self.strike_pop[i]
+                    if p > 0:  # lands big and settles, like the brush hitting paper
+                        img = pygame.transform.smoothscale_by(img, 1 + p * 1.6)
+                    img.set_alpha(255)
+                else:
+                    img = brush_x(40, WASHI, outline=True)
+                    img.set_alpha(64)  # 25 %
+                screen.blit(img, img.get_rect(center=(cx, 62)))
+            y = 112
+        else:
+            label(screen, f, f.mono12, "TIME", MUTED, (W - 42, 34), "midright", tracking=4)
+            t = max(0.0, self.time)
+            col = HANKO if t <= 5 else GOLD if t <= 10 else WASHI
+            s = f"{int(t) // 60}:{int(t) % 60:02d}" if t > 0 or self.state != "play" else "0:00"
+            img = f.text(f.timer, s, col)
+            sh = f.shadow(f.timer, s)
+            r = img.get_rect(topright=(W - 38, 44))
+            if t <= 5 and self.state == "play":  # each second lands with a pulse
+                p = (math.ceil(t) - t) ** 3 if t > 0 else 0
+                k = 1 + 0.14 * p
+                img = pygame.transform.smoothscale_by(img, k)
+                sh = pygame.transform.smoothscale_by(sh, k)
+                r = img.get_rect(midright=r.midright)
+            sh.set_alpha(230)
+            screen.blit(sh, sh.get_rect(center=(r.centerx, r.centery + 3)))
+            img.set_alpha(255)
+            screen.blit(img, r)
+            y = r.bottom + 18
+        # power-up chips: what's active and how long it has left
+        for val, total, name, col in ((self.freeze, 6.0, "FREEZE", FRUITS["freeze"].juice),
+                                      (self.frenzy, 4.5, "FRENZY", FRUITS["frenzy"].juice),
+                                      (self.double, 8.0, "DOUBLE ×2", FRUITS["double"].juice)):
+            if val > 0:
+                label(screen, f, f.mono12, name, col, (W - 42, y), "midright", tracking=3)
+                track = pygame.Surface((140, 2))
+                track.fill(WASHI)
+                track.set_alpha(40)
+                screen.blit(track, (W - 42 - 140, y + 14))
+                fill = int(140 * val / total)
+                if fill > 0:
+                    screen.fill(col, (W - 42 - fill, y + 14, fill, 2))
+                y += 38
+
+    def draw_pause(self, screen):
+        f = self.app.art.fonts
+        if self.pause_bg is None:  # the world is frozen: blur it once, not every frame
+            self.pause_bg = blurred(screen, (120, 114, 110))
+        screen.blit(self.pause_bg, (0, 0))
+        self.app.add.fill((0, 0, 0))  # no glow bleeding through the frosted glass
+        label(screen, f, f.pause, "Paused", WASHI, (W / 2, H / 2 - 28), tracking=2)
+        line = pygame.Surface((64, 1))
+        line.fill(GOLD)
+        screen.blit(line, (W / 2 - 32, H / 2 + 24))
+        label(screen, f, f.mono15, "Click or Esc to resume  ·  Q to quit to menu", MUTED, (W / 2, H / 2 + 58))
 
     def draw(self, screen):
-        w, f = self.w, self.app.art.fonts
+        w = self.w
+        if self.paused and self.pause_bg is not None:
+            self.draw_pause(screen)
+            return
         w.draw(screen, self.draw_world_extra)
         if self.freeze > 0:
             screen.fill((185, 215, 255), special_flags=pygame.BLEND_RGB_MULT)
@@ -679,68 +935,24 @@ class Play(Scene):
         if self.frenzy > 0:
             k = int(40 + 25 * math.sin(w.shake.t * 10))
             pygame.draw.rect(screen, (k, k // 3, 0), screen.get_rect(), 26)
-        # HUD — score
-        icon = pygame.transform.smoothscale(self.app.art.fruits["watermelon"].face, (52, 52))
-        screen.blit(icon, (26, 22))
-        k = 1 + self.score_pop * 1.4
-        img = f.big.render(str(self.score), True, GOLD)
-        sh = f.big.render(str(self.score), True, (0, 0, 0))
-        if k > 1.001:
-            img, sh = (pygame.transform.rotozoom(i, 0, k) for i in (img, sh))
-        r = img.get_rect(midleft=(90, 50))
-        sh.set_alpha(170)
-        screen.blit(sh, r.move(3, 3))
-        screen.blit(img, r)
-        best = max(self.best_prev, self.score)
-        text(screen, f.util, f"BEST {best}", (215, 200, 170), (92, 88), "midleft", 2)
-        if self.double > 0:
-            text(screen, f.mid, "×2", GOLD, (r.right + 30, 52), shadow=3)
-        # HUD — strikes or timer
-        if self.mode == "classic":
-            for i in range(3):
-                x = W - 60 - (2 - i) * 54
-                s = 15 + i * 2 + self.strike_pop[i] * 30
-                hit = i < self.strikes
-                col = HANKO if hit else (120, 105, 85)
-                wd = 9 if hit else 4
-                for a, b in (((-1, -1), (1, 1)), ((1, -1), (-1, 1))):
-                    pygame.draw.line(screen, col, (x + a[0] * s, 48 + a[1] * s), (x + b[0] * s, 48 + b[1] * s), wd)
-        else:
-            t = max(0.0, self.time)
-            col = HANKO if t <= 5 else GOLD if t <= 10 else WASHI
-            img = f.big.render(f"{int(t) // 60}:{int(t) % 60:02d}", True, col)
-            if t <= 5 and self.state == "play":
-                img = pygame.transform.rotozoom(img, 0, 1 + 0.18 * (math.ceil(t) - t))
-            screen.blit(img, img.get_rect(topright=(W - 30, 14)))
-        y = 104
-        for val, total, name, col in ((self.freeze, 6.0, "FREEZE", FRUITS["freeze"].juice), (self.frenzy, 4.5, "FRENZY", FRUITS["frenzy"].juice),
-                                      (self.double, 8.0, "DOUBLE", FRUITS["double"].juice)):
-            if val > 0:
-                text(screen, f.util, name, col, (W - 30, y), "topright", 2)
-                pygame.draw.rect(screen, (40, 30, 25), (W - 190, y + 24, 160, 6))
-                pygame.draw.rect(screen, col, (W - 190, y + 24, 160 * val / total, 6))
-                y += 42
+        self.draw_hud(screen)
         w.draw_overlay(screen)
         if self.paused:
-            screen.fill((95, 90, 100), special_flags=pygame.BLEND_RGB_MULT)
-            seal = self.app.art.seal("休", 130)
-            screen.blit(seal, seal.get_rect(center=(W / 2, H / 2 - 90)))
-            text(screen, f.big, "PAUSED", WASHI, (W / 2, H / 2 + 40), shadow=4)
-            text(screen, f.small, "click or Esc to resume   ·   Q to quit to menu", (215, 200, 170), (W / 2, H / 2 + 95), shadow=2)
+            self.draw_pause(screen)
 
 
 # ---------------- game over ----------------
 
 class GameOver(Scene):
+    COUNT_AT, COUNT = 0.45, 1.3  # the score counts up once the 終 seal has landed
+
     def __init__(self, app, play, snap):
         self.app, self.play = app, play
-        bg = snap.copy()
-        bg.fill((80, 72, 70), special_flags=pygame.BLEND_RGB_MULT)
-        self.w = World(app, bg)
+        self.w = World(app, blurred(snap, (100, 92, 88)))
         self.t = 0.0
         self.new_best = play.score > play.best_prev and play.score > 0
-        self.retry = SliceButton(self.w, "watermelon", W * 0.32, H * 0.77, "再", "RETRY")
-        self.menu = SliceButton(self.w, "apple", W * 0.68, H * 0.77, "戻", "MENU")
+        self.retry = SliceButton(self.w, "watermelon", W * 0.38, 548, "再", "Retry", "or press Enter", ring=72)
+        self.menu = SliceButton(self.w, "apple", W * 0.62, 548, "戻", "Menu", "or press Esc", ring=72)
         self.choice = None
         self.stamped = 0
         self.shown = 0.0
@@ -758,20 +970,21 @@ class GameOver(Scene):
     def update(self, dt):
         self.t += dt
         self.w.update(dt, dt)
-        self.shown = min(float(self.play.score), self.shown + max(1, self.play.score) * dt * 1.6)
-        if self.stamped == 0 and self.t > 0.25:
+        u = min(1.0, max(0.0, (self.t - self.COUNT_AT) / self.COUNT))
+        self.shown = self.play.score * (1 - (1 - u) ** 3)  # fast at first, easing onto the final number
+        if self.stamped == 0 and self.t > 0.2:
             self.stamped = 1
-            over = "TIME'S UP" if self.play.time is not None else "GAME OVER"
-            self.w.stamp("終", over, W / 2, 96, 96, WASHI)
-        if self.stamped == 1 and self.new_best and self.t > 1.2:
+            over = "Time's up" if self.play.time is not None else "Game over"
+            self.w.stamp("終", over, W / 2, 104, 88, hold=True)
+        if self.stamped == 1 and self.new_best and self.t > self.COUNT_AT + self.COUNT:
             self.stamped = 2
-            self.w.stamp("極", "NEW BEST", W * 0.82, H * 0.36, 120)
-            self.w.particles.sparks(W * 0.82, H * 0.36, GOLD, 60, 700)
+            self.w.stamp("極", "New best", W / 2 + 300, 280, 104, hold=True)
+            self.w.particles.sparks(W / 2 + 300, 280, GOLD, 60, 700)
             self.app.audio.play("power")
         if self.t > 0.6 and not self.choice:
-            if self.retry.update(dt, self.app.segments):
+            if self.retry.update(dt, self.app.segments, self.app.mouse):
                 self.choose("retry")
-            elif self.menu.update(dt, self.app.segments):
+            elif self.menu.update(dt, self.app.segments, self.app.mouse):
                 self.choose("menu")
         if self.choice:
             self.choice_t += dt
@@ -786,16 +999,29 @@ class GameOver(Scene):
     def draw(self, screen):
         f = self.app.art.fonts
         self.w.draw(screen)
-        text(screen, f.huge, str(int(self.shown)), GOLD, (W / 2, H * 0.42), shadow=6)
         p = self.play
-        best = self.app.save["best"][p.mode]
-        text(screen, f.small, f"{MODES[p.mode]['title']}  ·  BEST {best}", WASHI, (W / 2, H * 0.42 + 72), shadow=2)
-        stats = f"sliced {p.stats['sliced']}    ·    best combo {p.stats['best_combo']}    ·    bombs hit {p.stats['bombs']}"
-        text(screen, f.util, stats, (215, 200, 170), (W / 2, H * 0.42 + 104), shadow=2)
+        if self.t > self.COUNT_AT:
+            sr = label(screen, f, f.final, str(round(self.shown)), GOLD, (W / 2, 290))
+            best = self.app.save["best"][p.mode]
+            label(screen, f, f.mono12, f"{MODES[p.mode]['title'].upper()}  ·  BEST {best}", MUTED, (W / 2, sr.bottom + 6),
+                  tracking=3)
+            # stats row: quiet labels, the numbers in paper white
+            parts = [("Sliced", p.stats["sliced"]), ("Best combo", p.stats["best_combo"]), ("Bombs", p.stats["bombs"])]
+            imgs = []
+            for name, val in parts:
+                imgs.append((f.text(f.mono15, name + " ", MUTED), f.text(f.mono15, str(val), WASHI)))
+            gap = 40
+            total = sum(a.get_width() + b.get_width() for a, b in imgs) + gap * (len(imgs) - 1)
+            x, y = W / 2 - total / 2, sr.bottom + 40
+            for a, b in imgs:
+                for im in (a, b):
+                    im.set_alpha(255)
+                    screen.blit(im, im.get_rect(midleft=(x, y)))
+                    x += im.get_width()
+                x += gap
         if self.t > 0.6:
             self.retry.draw(screen)
             self.menu.draw(screen)
-        text(screen, f.util, "slice a fruit  ·  Enter retry  ·  Esc menu", (170, 155, 130), (W / 2, H - 14), shadow=0)
         self.w.draw_overlay(screen)
 
 
@@ -822,16 +1048,26 @@ class Wipe:
         self.t += dt
         return self.t < self.DUR
 
-    def draw(self, screen):
+    def draw(self, screen, add=None, cpu=True):
         k = min(1.0, self.t / self.DUR)
         e = 1 - (1 - k) ** 3
         d = e * W * 0.8
         nx, ny = self.n
-        screen.blit(self.pieces[0], (-nx * d, -ny * d - e * 40))
-        screen.blit(self.pieces[1], (nx * d, ny * d + e * 40))
-        if k < 0.3:
-            c = int(255 * (1 - k / 0.3))
-            pygame.draw.line(screen, (c, c, c), *self.line, 5)
+        offs = ((-nx * d, -ny * d - e * 40), (nx * d, ny * d + e * 40))
+        for piece, off in zip(self.pieces, offs):
+            screen.blit(piece, off)
+        # the cut's edge glows and travels with each half, burning out as they part
+        c = (1 - k) ** 1.5
+        if c <= 0.02:
+            return
+        (ax, ay), (bx, by) = self.line
+        for ox, oy in offs:
+            a, b = (ax + ox, ay + oy), (bx + ox, by + oy)
+            if add is not None:
+                pygame.draw.line(add, shade((255, 200, 140), 0.35 * c), a, b, 9)
+                pygame.draw.line(add, shade((255, 244, 225), c), a, b, 2)
+            if cpu or add is None:
+                pygame.draw.aaline(screen, shade((255, 240, 220), c), a, b)
 
 
 # ---------------- app ----------------
@@ -844,8 +1080,8 @@ class App:
         pygame.display.set_caption("Fruit Ninja · Night Dojo")
         self.add = pygame.Surface((W, H))  # emissive layer: glows only, black = none
         self.frame.fill(LACQUER)
-        f = pygame.font.SysFont("bahnschrift,segoeui,arial", 28, bold=True)
-        img = f.render("sharpening the blade…", True, WASHI)
+        f = _font(Fonts.MONO[0], 15, Fonts.MONO[1])
+        img = f.render("Sharpening the blade…", True, MUTED)
         self.frame.blit(img, img.get_rect(center=(W / 2, H / 2)))
         self.present({})
         self.art = Art()
@@ -969,7 +1205,7 @@ class App:
         if self.wipe and not self.wipe.update(dt):
             self.wipe = None
         if self.wipe:
-            self.wipe.draw(self.frame)
+            self.wipe.draw(self.frame, self.add, self.gpu is None)
         self.draw_blade()
 
     def draw_blade(self):

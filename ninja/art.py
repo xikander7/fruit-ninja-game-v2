@@ -55,19 +55,80 @@ def shade_of(c, k):
     return tuple(max(0, min(255, int(v * k))) for v in c)
 
 
-def _font(names, size, bold=False):
-    return pygame.font.SysFont(names, size, bold=bold)
+FONT_DIR = os.path.join(os.path.dirname(SPRITE_DIR), "fonts")
+
+
+def _font(file, size, fallback, bold=False):
+    """A bundled TTF; the system font list if the file is missing (the game must still start)."""
+    path = os.path.join(FONT_DIR, file)
+    if os.path.exists(path):
+        try:
+            return pygame.font.Font(path, size)
+        except (OSError, pygame.error):
+            pass
+    return pygame.font.SysFont(fallback, size, bold=bold)
 
 
 class Fonts:
+    DISPLAY = ("CormorantSC-Bold.ttf", "georgia,timesnewroman,dejavuserif", True)  # titles, captions
+    NUM = ("BarlowCondensed-SemiBold.ttf", "bahnschrift,arialnarrow,dejavusanscondensed", True)  # numerals, HUD
+    MONO = ("IBMPlexMono-Regular.ttf", "consolas,dejavusansmono,couriernew", False)  # small utility labels
+
     def __init__(self):
-        disp = "bahnschrift,segoeuiblack,arialblack,dejavusans"
-        self.huge = _font(disp, 112, True)
-        self.big = _font(disp, 64, True)
-        self.mid = _font(disp, 36, True)
-        self.small = _font(disp, 22, True)
-        self.util = _font("consolas,dejavusansmono,couriernew", 18)
+        def f(kind, size):
+            return _font(kind[0], size, kind[1], kind[2])
+
+        self.title = f(self.DISPLAY, 120)
+        self.pause = f(self.DISPLAY, 72)
+        self.mode = f(self.DISPLAY, 40)
+        self.caption = f(self.DISPLAY, 36)
+        self.final = f(self.NUM, 140)
+        self.score = f(self.NUM, 72)
+        self.timer = f(self.NUM, 64)
+        self.bonus = f(self.NUM, 40)
+        self.pop = f(self.NUM, 30)
+        self.best = f(self.NUM, 26)
+        self.mono15 = f(self.MONO, 15)
+        self.mono13 = f(self.MONO, 13)
+        self.mono12 = f(self.MONO, 12)
         self.kanji = "yugothic,msgothic,notosanscjkjp,notosanscjk,malgungothic"
+        # v2 names, kept so older call sites still resolve
+        self.huge, self.big, self.mid, self.small, self.util = self.title, self.timer, self.caption, self.best, self.mono15
+        self._cache = {}
+
+    def text(self, font, s, color, tracking=0):
+        """Rendered text, cached: the HUD redraws every frame but its strings rarely change. `tracking` adds px
+        between letters (pygame has no letter-spacing, so spaced text is set one glyph at a time)."""
+        key = (id(font), s, color, tracking)
+        img = self._cache.get(key)
+        if img is None:
+            if len(self._cache) > 600:  # a rolling score makes many strings; never let the cache grow unbounded
+                self._cache.clear()
+            if tracking and len(s) > 1:
+                glyphs = [font.render(c, True, color) for c in s]
+                w = sum(g.get_width() for g in glyphs) + tracking * (len(s) - 1)
+                img = pygame.Surface((max(1, w), font.get_height()), pygame.SRCALPHA)
+                x = 0
+                for g in glyphs:
+                    img.blit(g, (x, 0))
+                    x += g.get_width() + tracking
+            else:
+                img = font.render(s, True, color).convert_alpha()
+            self._cache[key] = img
+        return img
+
+    def shadow(self, font, s, tracking=0):
+        """A soft drop shadow for text over the photoreal wall (blurred, so it reads as depth, not an outline)."""
+        key = ("sh", id(font), s, tracking)
+        img = self._cache.get(key)
+        if img is None:
+            src = self.text(font, s, (0, 0, 0), tracking)
+            pad = 6
+            img = pygame.Surface((src.get_width() + pad * 2, src.get_height() + pad * 2), pygame.SRCALPHA)
+            img.blit(src, (pad, pad))
+            img = pygame.transform.gaussian_blur(img, 3)
+            self._cache[key] = img
+        return img
 
 
 # ---------- shape masks (white = inside) ----------
@@ -532,34 +593,61 @@ def make_background(seed=7):
 
 
 def make_seal(fonts, glyph, size, rng=None):
-    """A hanko stamp on a torn washi slip — the game's signature mark."""
+    """A hanko impression, ink only: a red square with the glyph left uncut (白文), worn at the edges the way a
+    real stone seal prints. The game's signature mark."""
     rng = rng or random.Random(glyph)
-    pad = int(size * 0.18)
-    tot = size + pad * 2
-    s = pygame.Surface((tot, tot), pygame.SRCALPHA)
-    # torn paper slip
-    pts = []
+    s = pygame.Surface((size, size), pygame.SRCALPHA)
+    m = size * 0.06
+    pts = []  # the stone's edge: square, slightly irregular
+    corners = [(m, m), (size - m, m), (size - m, size - m), (m, size - m)]
     for side in range(4):
-        for k in range(9):
-            t = k / 9
-            corners = [(pad * 0.4, pad * 0.4), (tot - pad * 0.4, pad * 0.4), (tot - pad * 0.4, tot - pad * 0.4), (pad * 0.4, tot - pad * 0.4)]
-            a, b = corners[side], corners[(side + 1) % 4]
-            pts.append((a[0] + (b[0] - a[0]) * t + rng.uniform(-3, 3), a[1] + (b[1] - a[1]) * t + rng.uniform(-3, 3)))
-    pygame.draw.polygon(s, (*WASHI, 245), pts)
-    for _ in range(int(size * 0.8)):  # paper fibres
-        x, y = rng.uniform(pad, tot - pad), rng.uniform(pad, tot - pad)
-        pygame.draw.line(s, (220, 205, 175, 120), (x, y), (x + rng.uniform(-6, 6), y + rng.uniform(-3, 3)), 1)
-    # stamp
-    stamp = pygame.Surface((size, size), pygame.SRCALPHA)
-    br = int(size * 0.08)
-    pygame.draw.rect(stamp, HANKO, stamp.get_rect().inflate(-br, -br), int(size * 0.07), border_radius=int(size * 0.14))
-    font = pygame.font.SysFont(fonts.kanji, int(size * 0.66), bold=True)
-    g = font.render(glyph, True, HANKO)
-    stamp.blit(g, g.get_rect(center=(size / 2, size / 2 + size * 0.02)))
-    for _ in range(int(size * 1.6)):  # ink erosion
-        pygame.draw.circle(stamp, (0, 0, 0, 0), (rng.uniform(0, size), rng.uniform(0, size)), rng.uniform(0.6, 2.2))
-    s.blit(stamp, (pad, pad))
+        a, b = corners[side], corners[(side + 1) % 4]
+        for k in range(8):
+            t = k / 8
+            j = size * 0.012
+            pts.append((a[0] + (b[0] - a[0]) * t + rng.uniform(-j, j), a[1] + (b[1] - a[1]) * t + rng.uniform(-j, j)))
+    pygame.draw.polygon(s, (*HANKO, 255), pts)
+    font = pygame.font.SysFont(fonts.kanji, int(size * 0.6), bold=True)
+    g = font.render(glyph, True, (0, 0, 0))  # alpha-only stencil: subtracting it cuts the glyph out of the ink
+    s.blit(g, g.get_rect(center=(size / 2, size / 2 + size * 0.02)), special_flags=pygame.BLEND_RGBA_SUB)
+    # uneven ink: a coarse noise field multiplied into alpha, so the red breathes instead of reading as a flat fill
+    n = max(4, size // 6)
+    noise = pygame.Surface((n, n), pygame.SRCALPHA)
+    for y in range(n):
+        for x in range(n):
+            noise.set_at((x, y), (255, 255, 255, rng.randint(205, 255)))
+    s.blit(pygame.transform.smoothscale(noise, (size, size)), (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    wear = pygame.Surface((size, size), pygame.SRCALPHA)  # multiplied into alpha: white keeps ink, clear cuts it
+    wear.fill((255, 255, 255, 255))
+    for _ in range(int(size * 0.35)):  # worn spots where the paper didn't take the ink
+        pygame.draw.circle(wear, (255, 255, 255, rng.randint(0, 190)), (rng.uniform(0, size), rng.uniform(0, size)),
+                           rng.uniform(0.4, max(0.8, size * 0.018)))
+    for _ in range(int(size * 0.12)):  # chipped edges
+        t = rng.uniform(m, size - m)
+        x, y = [(t, m), (size - m, t), (t, size - m), (m, t)][rng.randint(0, 3)]
+        pygame.draw.circle(wear, (255, 255, 255, 0), (x, y), rng.uniform(0.6, max(1.0, size * 0.025)))
+    s.blit(wear, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
     return s
+
+
+def make_blot(size, rng=None):
+    """The dark-red bleed a seal leaves behind it: an irregular soft blob that spreads past the stone, with a few
+    flecks thrown off by the impact."""
+    rng = rng or random.Random(size)
+    d = int(size * 1.9)
+    s = pygame.Surface((d, d), pygame.SRCALPHA)
+    c = d / 2
+    col = (92, 12, 10, 255)
+    x, y = c, c
+    for _ in range(40):  # a wandering cluster, pulled back toward the centre so it stays one blot
+        x += rng.uniform(-1, 1) * size * 0.16 + (c - x) * 0.2
+        y += rng.uniform(-1, 1) * size * 0.16 + (c - y) * 0.2
+        pygame.draw.circle(s, col, (x, y), rng.uniform(size * 0.24, size * 0.5))
+    for _ in range(9):
+        a = rng.uniform(0, math.tau)
+        r = rng.uniform(size * 0.62, size * 0.86)
+        pygame.draw.circle(s, col, (c + math.cos(a) * r, c + math.sin(a) * r), rng.uniform(1.2, max(1.5, size * 0.035)))
+    return pygame.transform.gaussian_blur(s, max(1, size // 60))
 
 
 def make_soft(radius, color, alpha=True):
@@ -604,6 +692,7 @@ class Art:
         self.stains = {k: [make_stain(ft.juice, ft.r, rng) for _ in range(3)] for k, ft in FRUITS.items()}
         self.frost = make_frost()
         self._seals = {}
+        self._blots = {}
         self._soft = {}
 
     def seal(self, glyph, size=120):
@@ -611,6 +700,11 @@ class Art:
         if key not in self._seals:
             self._seals[key] = make_seal(self.fonts, glyph, size)
         return self._seals[key]
+
+    def blot(self, size):
+        if size not in self._blots:
+            self._blots[size] = make_blot(size)
+        return self._blots[size]
 
     def soft(self, radius, color, alpha=True):
         radius = max(2, int(radius) // 3 * 3)

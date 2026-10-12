@@ -456,15 +456,16 @@ class Shake:
 
 
 class Popups:
+    """Floating score numbers: Barlow numerals with a soft shadow, rising and fading."""
+
     def __init__(self, fonts):
         self.fonts = fonts
         self.items = []
 
     def add(self, text, x, y, color=WASHI, big=False):
-        font = self.fonts.mid if big else self.fonts.small
-        img = font.render(text, True, color)
-        sh = font.render(text, True, (0, 0, 0))
-        self.items.append([img, sh, x, y, 0.0])
+        f = self.fonts
+        font = f.bonus if big else f.pop
+        self.items.append([f.text(font, text, color), f.shadow(font, text), x, y, 0.0])
 
     def update(self, dt):
         for p in self.items:
@@ -474,48 +475,91 @@ class Popups:
 
     def draw(self, surf):
         for img, sh, x, y, age in self.items:
-            a = int(255 * min(1, (0.9 - age) / 0.4))
-            k = 1 + max(0, 0.15 - age) * 3  # pop in
-            for im, off in ((sh, 2), (img, 0)):
+            a = int(255 * min(1, age / 0.05, (0.9 - age) / 0.4))
+            k = 1 + max(0, 0.12 - age) * 2.5  # a short pop in
+            for im, dy in ((sh, 3), (img, 0)):
                 s = pygame.transform.rotozoom(im, 0, k) if k > 1.001 else im
                 s.set_alpha(a)
-                surf.blit(s, s.get_rect(center=(x + off, y + off)))
+                surf.blit(s, s.get_rect(center=(x, y + dy)))
+
+
+def stamp_scale(age):
+    """Seal drop: 1.8 -> 1.0 in 0.11 s, accelerating like a hand pressing down, then a 0.92 undershoot as the
+    stone bites, settling back to 1.0."""
+    if age < 0.11:
+        u = age / 0.11
+        return 1.8 - 0.8 * u * u
+    if age < 0.16:
+        u = (age - 0.11) / 0.05
+        return 1.0 - 0.08 * (1 - (1 - u) ** 2)
+    if age < 0.28:
+        u = (age - 0.16) / 0.12
+        return 0.92 + 0.08 * u * u * (3 - 2 * u)
+    return 1.0
 
 
 class Stamp:
-    """A hanko seal that slams onto the screen. The game's signature beat."""
+    """A hanko seal that slams onto the screen over its own ink bleed. The game's signature beat."""
 
     DUR = 1.4
+    LAND = 0.11
 
-    def __init__(self, art, glyph, caption, x, y, size=120, color=GOLD):
+    def __init__(self, art, glyph, caption, x, y, size=120, color=WASHI, bonus=None, hold=False):
+        f = art.fonts
         self.seal = art.seal(glyph, size)
-        self.cap = art.fonts.mid.render(caption, True, color) if caption else None
-        self.cap_sh = art.fonts.mid.render(caption, True, (0, 0, 0)) if caption else None
-        self.x = min(max(x, size), W - size)
-        self.y = min(max(y, size), H - size)
-        self.rot = random.uniform(-9, 9)
+        self.blot = art.blot(size)
+        self.cap = f.text(f.caption, caption, color, 2) if caption else None
+        self.cap_sh = f.shadow(f.caption, caption, 2) if caption else None
+        self.bonus = f.text(f.bonus, bonus, GOLD) if bonus else None
+        self.bonus_sh = f.shadow(f.bonus, bonus) if bonus else None
+        cw = (self.cap.get_width() if self.cap else 0) + (self.bonus.get_width() + 14 if self.bonus else 0)
+        mx = max(size * 0.8, cw / 2 + 24)
+        self.x = min(max(x, mx), W - mx)
+        self.y = min(max(y, size * 0.75), H - size * 0.5 - 80)
+        self.size = size
+        self.rot = random.uniform(-6, 6)
         self.age = 0.0
         self.landed = False
+        self.hold = hold  # stays on screen (results) instead of fading after DUR
+        self._still = None  # the settled seal, rotated once instead of every frame
 
     def scale(self):
-        a = self.age
-        if a < 0.11:
-            return 2.4 - 1.5 * (a / 0.11)  # slam down from above the paper
-        if a < 0.2:
-            return 0.9 + 0.1 * ((a - 0.11) / 0.09)
-        return 1.0
+        return stamp_scale(self.age)
 
     def update(self, dt):
         self.age += dt
-        return self.age < self.DUR
+        return self.hold or self.age < self.DUR
 
     def draw(self, surf):
+        a = self.age
+        fade = 1.0 if self.hold else min(1.0, (self.DUR - a) / 0.35)
+        if a >= self.LAND:  # the ink bleeds out from under the stone on impact
+            u = min(1.0, (a - self.LAND) / 0.12)
+            k = 0.82 + 0.18 * (1 - (1 - u) ** 3)
+            b = pygame.transform.rotozoom(self.blot, self.rot * 0.5, k)
+            b.set_alpha(int(153 * fade))  # 60 %
+            surf.blit(b, b.get_rect(center=(self.x, self.y)))
         k = self.scale()
-        alpha = int(255 * min(1, self.age / 0.06, (self.DUR - self.age) / 0.35))
-        img = pygame.transform.rotozoom(self.seal, self.rot, k)
-        img.set_alpha(alpha)
+        if k == 1.0:
+            if self._still is None:
+                self._still = pygame.transform.rotozoom(self.seal, self.rot, 1.0)
+            img = self._still
+        else:
+            img = pygame.transform.rotozoom(self.seal, self.rot, k)
+        img.set_alpha(int(255 * min(1.0, a / 0.05, fade)))
         surf.blit(img, img.get_rect(center=(self.x, self.y)))
-        if self.cap and self.age > 0.1:
-            for im, off in ((self.cap_sh, 3), (self.cap, 0)):
+        if self.cap and a > 0.14:
+            u = min(1.0, (a - 0.14) / 0.2)
+            alpha = int(255 * min(u, fade))
+            y = self.y + self.size * 0.5 + 34 + 8 * (1 - u) ** 2
+            w = self.cap.get_width() + (self.bonus.get_width() + 14 if self.bonus else 0)
+            x = self.x - w / 2
+            for im, sh in ((self.cap, self.cap_sh), (self.bonus, self.bonus_sh)):
+                if im is None:
+                    continue
+                r = im.get_rect(midleft=(x, y))
+                sh.set_alpha(alpha)
+                surf.blit(sh, sh.get_rect(center=(r.centerx, r.centery + 3)))
                 im.set_alpha(alpha)
-                surf.blit(im, im.get_rect(center=(self.x + off, self.y + self.seal.get_height() * 0.55 + off)))
+                surf.blit(im, r)
+                x = r.right + 14

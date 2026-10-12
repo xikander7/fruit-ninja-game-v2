@@ -5,13 +5,15 @@ FPS = 120
 GRAVITY = 1250.0
 SAVE_PATH = Path.home() / ".fruit_ninja_dojo.json"
 
-# Palette — named by role
-LACQUER = (22, 14, 12)
-CEDAR = (92, 54, 36)
-WASHI = (243, 233, 210)
-GOLD = (242, 193, 78)
-HANKO = (200, 48, 42)
-MOON = (170, 220, 255)
+# Palette: dark and few colours; light comes from the blade, juice and effects.
+INK = (10, 8, 8)
+WASHI = (236, 228, 210)  # paper white: text
+GOLD = (226, 182, 92)  # the only UI emphasis colour
+HANKO = (196, 40, 36)  # seals, strikes, danger, nothing else
+STEEL = (190, 215, 235)
+MUTED = (150, 138, 120)  # secondary text
+LACQUER = INK  # v2 name, still used for the letterbox fill
+CEDAR = (92, 54, 36)  # procedural fallback wood only
 
 # name: (outer glow, mid, core, unlock score)
 BLADES = {
@@ -22,7 +24,7 @@ BLADES = {
 }
 
 MODES = {
-    "classic": {"title": "CLASSIC", "glyph": "斬", "hint": "3 strikes · bombs end it"},
-    "arcade": {"title": "ARCADE", "glyph": "速", "hint": "60 seconds · power bananas"},
-    "zen": {"title": "ZEN", "glyph": "禅", "hint": "90 seconds · no bombs"},
+    "classic": {"title": "Classic", "glyph": "斬", "hint": "3 strikes · bombs end it"},
+    "arcade": {"title": "Arcade", "glyph": "速", "hint": "60 seconds · power bananas"},
+    "zen": {"title": "Zen", "glyph": "禅", "hint": "90 seconds · no bombs"},
 }
