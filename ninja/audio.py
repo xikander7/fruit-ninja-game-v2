@@ -1,7 +1,9 @@
-"""Every sound is synthesized at startup in pure Python — no audio files."""
+"""Sounds come from assets/audio (built by tools/build_audio.py); anything missing is synthesized in pure Python."""
 import array
 import math
+import os
 import random
+import re
 
 import pygame
 
@@ -165,8 +167,42 @@ def music(rng):
     return out
 
 
+AUDIO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "audio")
+# file prefix -> game sound name (ui clicks double as the quiet "throw" whoosh)
+GROUPS = {"slash": "swoosh", "splat": "splat", "explode": "explode", "fuse": "fuse", "combo": "combo",
+          "power": "power", "gong": "gong", "ui": "throw", "miss": "miss", "music": "music"}
+ALIASES = {"stamp": "combo", "life": "power"}  # names that reuse another group's files
+# Per-name level. Files are peak-normalised to -1 dBFS with RMS between about -14 and -25 dBFS,
+# so these bring them into balance; music sits well under the effects.
+LEVEL = {"swoosh": 0.9, "splat": 0.9, "throw": 0.35, "explode": 0.8, "fuse": 0.45, "miss": 0.75,
+         "combo": 0.7, "power": 0.7, "stamp": 0.6, "life": 0.55, "gong": 0.75, "music": 0.4}
+
+
+def _load_files(folder):
+    """{game name: [Sound]} for every wav/ogg named <prefix><digit>_<n>.<ext> in folder."""
+    files = {}
+    if os.path.isdir(folder):
+        for fn in sorted(os.listdir(folder)):
+            m = re.match(r"([a-z]+)\d*_\d+\.(wav|ogg)$", fn)
+            if m and m.group(1) in GROUPS:
+                files.setdefault(GROUPS[m.group(1)], []).append(os.path.join(folder, fn))
+    for alias, src in ALIASES.items():
+        if src in files:
+            files[alias] = files[src]
+    out = {}
+    for name, paths in files.items():
+        for path in paths:
+            try:
+                snd = pygame.mixer.Sound(path)  # own Sound per name: each has its own level
+            except pygame.error:
+                continue  # unreadable file: the synthesized fallback covers it
+            snd.set_volume(LEVEL[name])
+            out.setdefault(name, []).append(snd)
+    return out
+
+
 class Audio:
-    def __init__(self):
+    def __init__(self, folder=AUDIO_DIR):
         global SR
         self.ok = False
         self.muted = False
@@ -180,22 +216,28 @@ class Audio:
         pygame.mixer.set_reserved(2)
         self.fuse_ch = pygame.mixer.Channel(0)
         self.music_ch = pygame.mixer.Channel(1)
+        self.s = _load_files(folder)
         rng = random.Random(5)
-        self.s = {
-            "swoosh": [self._snd(swoosh(rng, rng.uniform(0.13, 0.2), rng.uniform(1800, 3000), rng.uniform(400, 700))) for _ in range(4)],
-            "splat": [self._snd(splat(rng)) for _ in range(4)],
-            "throw": [self._snd(swoosh(rng, 0.28, 250, 900), 0.35)],
-            "explode": [self._snd(explosion(rng))],
-            "fuse": [self._snd(fuse(rng), 0.5)],
-            "tick": [self._snd(tick(rng), 0.6)],
-            "miss": [self._snd(_mix((_sine_drop(int(0.25 * SR), 170, 85, 0.07), 1.0), (taiko(rng, 0.25, 90, 50), 0.6)), 0.8)],
-            "stamp": [self._snd(_mix((taiko(rng, 0.45, 140, 60), 1.0), (swoosh(rng, 0.06, 3000, 1500), 0.5)))],
-            "combo": [self._snd(arpeggio(rng, [74, 79, 81, 86], 0.06), 0.8)],
-            "power": [self._snd(arpeggio(rng, [74, 77, 81, 86, 89, 93], 0.045, 1.4), 0.9)],
-            "life": [self._snd(arpeggio(rng, [81, 86], 0.09), 0.7)],
-            "gong": [self._snd(_mix((taiko(rng, 1.0, 100, 45), 1.0), (pluck(_midi(50), 1.8, rng, 0.3), 0.6)))],
-            "music": [self._snd(music(rng), 0.42)],
+        # Synthesis costs about a second, so each fallback only runs when its files are missing.
+        fallback = {
+            "swoosh": lambda: [self._snd(swoosh(rng, rng.uniform(0.13, 0.2), rng.uniform(1800, 3000), rng.uniform(400, 700))) for _ in range(4)],
+            "splat": lambda: [self._snd(splat(rng)) for _ in range(4)],
+            "throw": lambda: [self._snd(swoosh(rng, 0.28, 250, 900), 0.35)],
+            "explode": lambda: [self._snd(explosion(rng))],
+            "fuse": lambda: [self._snd(fuse(rng), 0.5)],
+            "tick": lambda: [self._snd(tick(rng), 0.6)],
+            "miss": lambda: [self._snd(_mix((_sine_drop(int(0.25 * SR), 170, 85, 0.07), 1.0), (taiko(rng, 0.25, 90, 50), 0.6)), 0.8)],
+            "stamp": lambda: [self._snd(_mix((taiko(rng, 0.45, 140, 60), 1.0), (swoosh(rng, 0.06, 3000, 1500), 0.5)))],
+            "combo": lambda: [self._snd(arpeggio(rng, [74, 79, 81, 86], 0.06), 0.8)],
+            "power": lambda: [self._snd(arpeggio(rng, [74, 77, 81, 86, 89, 93], 0.045, 1.4), 0.9)],
+            "life": lambda: [self._snd(arpeggio(rng, [81, 86], 0.09), 0.7)],
+            "gong": lambda: [self._snd(_mix((taiko(rng, 1.0, 100, 45), 1.0), (pluck(_midi(50), 1.8, rng, 0.3), 0.6)))],
+            "music": lambda: [self._snd(music(rng), 0.42)],
         }
+        for name, build in fallback.items():
+            if name not in self.s:
+                self.s[name] = build()
+        self.music_snd = random.choice(self.s["music"])  # one loop per session
         self.ok = True
 
     def _snd(self, samples, vol=0.9):
@@ -214,20 +256,20 @@ class Audio:
             return
         ch = random.choice(self.s[name]).play()
         if ch:
-            ch.set_volume(vol)
+            ch.set_volume(min(1.0, vol * random.uniform(0.94, 1.06)))
 
     def fuse(self, on):
         if not self.ok:
             return
         if on and not self.muted and not self.fuse_ch.get_busy():
-            self.fuse_ch.play(self.s["fuse"][0], loops=-1)
+            self.fuse_ch.play(random.choice(self.s["fuse"]), loops=-1)
             self.fuse_ch.set_volume(0.35)
         elif not on and self.fuse_ch.get_busy():
             self.fuse_ch.stop()
 
     def start_music(self):
         if self.ok and not self.muted and not self.music_ch.get_busy():
-            self.music_ch.play(self.s["music"][0], loops=-1, fade_ms=1500)
+            self.music_ch.play(self.music_snd, loops=-1, fade_ms=1500)
             self.music_ch.set_volume(0.55)
 
     def toggle_mute(self):
