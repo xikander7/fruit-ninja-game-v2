@@ -16,8 +16,10 @@ bottom: it explains the language, the libraries, where every file lives and what
 
 ## Play it
 
-- **In your browser:** <!-- PAGES_URL --> (works best in Chrome, Edge or Firefox on a computer; click once to start)
-- **On Windows:** download `FruitNinjaNightDojo-windows.zip` from <!-- RELEASE_URL -->, unzip it and double-click
+- **In your browser:** this repo is private, so there is no public web link. Build it with `python tools/build_web.py`,
+  then serve `build/web_src/build/web/` with `python -m http.server` and open `http://127.0.0.1:8000` (use 127.0.0.1, not localhost).
+- **On Windows:** download `FruitNinjaNightDojo-windows.zip` from the [v4.0 release](https://github.com/xikander7/fruit-ninja-game-v2/releases/tag/v4.0)
+  (the repo is private: ask the owner to add you as a collaborator first), unzip it and double-click
   `FruitNinjaNightDojo.exe`. You don't need to install Python.
 
 ## Quick start (from the source code)
