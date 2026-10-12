@@ -77,7 +77,7 @@ class Fever:
 def on_cut(play):
     f = play.fever
     if f is not None and f.cut():
-        play.w.stamp("熱", "Fever", W / 2, H * 0.72, 120)
+        play.w.stamp("熱", "Fever", W / 2, H * 0.44, 120)  # clear above a power stamp (H * 0.72), caption included
         play.w.shake.kick(0.25)
         play.w.zoom_punch(1.02)
 

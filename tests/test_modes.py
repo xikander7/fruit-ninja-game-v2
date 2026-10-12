@@ -6,6 +6,7 @@ from ninja import game, settings
 from ninja.entities import Body
 
 DT = 1 / 60
+H_OFF = settings.H + 100  # just past the bottom edge, still falling
 
 def run(app, n):
     for _ in range(n):
@@ -113,6 +114,22 @@ class Modes(unittest.TestCase):
         b = p.w.throw("bomb", 640, 300, 0, 0)
         p.hit(b, (590, 300, 690, 300))
         self.assertEqual((p.fever.mult, p.fever.chain), (1, 0))
+
+    def test_path_drop_during_fever_costs_life_keeps_fever(self):
+        p = self.start("path")
+        self.cut_n(p, 40); self.assertTrue(p.fever.active)
+        b = p.w.throw("apple", 640, H_OFF, 0, 400); b.entered = True
+        run(self.app, 5)
+        self.assertFalse(b.alive)
+        self.assertEqual(p.lives, 2)
+        self.assertTrue(p.fever.active)
+
+    def test_bomb_during_fever_ends_it(self):
+        p = self.start("path")
+        self.cut_n(p, 40); self.assertTrue(p.fever.active)
+        b = p.w.throw("bomb", 640, 300, 0, 0)
+        p.hit(b, (590, 300, 690, 300))
+        self.assertFalse(p.fever.active); self.assertEqual(p.fever.mult, 1)
 
     def test_rain_fruit_never_cost_lives(self):
         p = self.start("path")

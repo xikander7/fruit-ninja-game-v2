@@ -663,7 +663,7 @@ class Play(Scene):
         pts = b.ft.points * (2 if self.double > 0 else 1) + 10 * crit
         pts = self.fever.points(pts) if self.fever else pts
         if crit:
-            w.popups.add(f"Critical +{self.fever.points(10)}", b.x, b.y - 50, GOLD, True)  # arcade: fever is on
+            w.popups.add(f"Critical +{self.fever.points(10) if self.fever else 10}", b.x, b.y - 50, GOLD, True)
             w.particles.sparks(b.x, b.y, GOLD, 30, 600)
             w.hitstop = max(w.hitstop, 0.06)
         else:
@@ -713,7 +713,8 @@ class Play(Scene):
 
     def strike(self, b):
         self.stats["missed"] += 1
-        self.fever and self.fever.reset()
+        if self.fever and not self.fever.active:  # a drop breaks the chain, but never a running Fever
+            self.fever.reset()
         if self.mode in ("classic", "path"):
             self.lose_life(b.x, "drop")
 
@@ -721,7 +722,8 @@ class Play(Scene):
         """A strike (classic) or a lost life (path; `reason` is "drop" or "bomb"): a red brush mark where it happened."""
         if self.state != "play":
             return
-        self.fever and self.fever.reset()
+        if self.fever and (reason != "drop" or not self.fever.active):
+            self.fever.reset()
         self.strike_pop[self.strikes] = 0.35
         self.strikes += 1
         self.misses.append([min(max(x, 40), W - 40), 0.0])
