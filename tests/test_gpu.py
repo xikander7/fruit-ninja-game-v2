@@ -68,6 +68,33 @@ class PostFXRender(unittest.TestCase):
         self.assertAlmostEqual(marker_x({}), W // 2 + 200, delta=3)
         self.assertAlmostEqual(marker_x({"zoom": 1.2}), W // 2 + 240, delta=4)
 
+    def test_shock_displaces_pixels_near_the_ring_only(self):
+        base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
+        for x in range(0, W, 8):  # fine vertical stripes: any horizontal displacement changes pixels
+            base.fill((255, 255, 255), (x, 0, 3, H))
+        self.fx.time = 0.0
+        plain = self.render(base, emissive)
+        self.fx.time = 0.0  # same grain
+        shocked = self.render(base, emissive, {"shocks": [(0.5, 0.5, 0.2, 0.04)]})
+
+        def diff(x0, x1):
+            return sum(abs(plain.get_at((x, H // 2))[0] - shocked.get_at((x, H // 2))[0]) for x in range(x0, x1))
+
+        ring = W // 2 + round(0.2 * H)  # radius is in units of screen height
+        self.assertGreater(diff(ring - 40, ring + 40), 500)
+        self.assertLess(diff(W // 2 + 320, W // 2 + 400), 50)  # well outside the ring: untouched
+        self.assertLess(diff(W // 2 - 30, W // 2 + 30), 50)  # inside the ring: untouched
+
+    def test_flash_brightens(self):
+        base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
+        base.fill((60, 60, 60))
+        self.fx.time = 0.0
+        off = self.render(base, emissive).get_at((W // 2, H // 2))
+        self.fx.time = 0.0
+        on = self.render(base, emissive, {"flash": 0.5}).get_at((W // 2, H // 2))
+        for a, b in zip(off[:3], on[:3]):
+            self.assertGreater(b, a + 100)
+
     def test_image_is_not_upside_down(self):
         base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
         base.fill((255, 255, 255), (W // 2 - 10, 100, 20, 20))  # near the top in pygame coords

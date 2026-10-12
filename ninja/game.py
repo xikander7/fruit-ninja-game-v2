@@ -8,7 +8,7 @@ import pygame
 from .art import Art, FRUITS, REGULAR, WEIGHTS, SPECIALS
 from .audio import Audio
 from .entities import Body, Half, seg_hits_circle, rotate_vec
-from .fx import Particles, Stains, Trail, Shake, Popups, Stamp
+from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade
 from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, LACQUER, BLADES, MODES
 
 SLICE_SPEED = 300  # px/s — just moving the cursor slices; a slow drift doesn't
@@ -57,6 +57,10 @@ def text(surf, font, s, color, pos, anchor="center", shadow=3, alpha=255):
 # ---------------- world: everything that lives on the dojo wall ----------------
 
 class World:
+    PUNCH = 0.25  # s for a combo zoom punch to ease back
+    SLOW_HOLD, SLOW_EASE = 0.4, 0.15  # slow-mo: held at full strength, then eased back to real time
+    SHOCK = 0.6  # s for a bomb shockwave to cross the screen
+
     def __init__(self, app, bg=None):
         self.app, self.art = app, app.art
         self.bg = bg or self.art.bg
@@ -70,7 +74,14 @@ class World:
         self.slashes, self.rings = [], []
         self.flash = 0.0
         self.hitstop = 0.0
-        self.petal_t = 0.0
+        self.punch = [1.0, self.PUNCH]  # (peak zoom, age)
+        self.slowmo = 0.0  # real seconds of slow-mo left
+        self.shocks = []  # [x, y, age]
+        self.t = 0.0
+        self.mote_t = 0.0
+        self.ember_t = random.uniform(1.0, 3.0)
+        for _ in range(40):  # the dojo already has dust hanging in the lamplight
+            self.particles.mote()
 
     def throw(self, kind, x, y, vx, vy, static=False):
         b = Body(self.art, kind, x, y, vx, vy, static)
@@ -88,29 +99,57 @@ class World:
             sx, sy = nx * side, ny * side
             vx = (0 if b.static else b.vx * 0.6) + sx * 170 + dx * 60
             vy = (0 if b.static else b.vy * 0.6) + sy * 170 - 120
-            self.halves.append(Half(fa, b.x + sx * b.r * 0.3, b.y + sy * b.r * 0.3, vx, vy, math.degrees(math.atan2(-sy, sx))))
-        self.particles.juice(b.x, b.y, b.ft.juice, nx, ny)
-        self.stains.add(b.kind, b.x, b.y)
+            self.halves.append(Half(fa, b.x + sx * b.r * 0.3, b.y + sy * b.r * 0.3, vx, vy, math.degrees(math.atan2(-sy, sx)), b))
+        self.particles.juice(b.x, b.y, b.ft.juice, nx, ny, spread=b.r * 0.6)
+        self.stains.add(b.ft.juice, b.r, b.x, b.y)
         self.slashes.append([b.x, b.y, dx, dy, b.r * 1.6, 0.0])
         self.app.audio.play("splat", 0.8)
 
     def explode(self, b):
         b.alive = False
         self.rings.append([b.x, b.y, 0.0])
+        self.shocks.append([b.x, b.y, 0.0])
         self.flash = 0.8
-        self.hitstop = 0.14
-        self.particles.sparks(b.x, b.y, (255, 190, 90), 70, 1100, 0.9)
-        self.particles.sparks(b.x, b.y, (255, 255, 230), 25, 500, 0.4)
+        self.hitstop = 0.12
+        self.particles.sparks(b.x, b.y, (255, 190, 90), 50, 1100, 0.7)
+        self.particles.sparks(b.x, b.y, (255, 255, 230), 20, 500, 0.35)
         self.particles.smoke(b.x, b.y, 22)
+        self.particles.shards(b.x, b.y, 10)
+        self.particles.embers(b.x, b.y, 40)
         self.shake.kick(1.0)
         self.app.audio.play("explode")
+
+    def zoom_punch(self, zoom):
+        self.punch = [zoom, 0.0]
+
+    def slow(self):
+        self.slowmo = self.SLOW_HOLD + self.SLOW_EASE
+
+    def slow_k(self):
+        """1 while slow-mo is at full strength, easing to 0 as it ends."""
+        if self.slowmo <= 0:
+            return 0.0
+        if self.slowmo >= self.SLOW_EASE:
+            return 1.0
+        u = self.slowmo / self.SLOW_EASE
+        return u * u * (3 - 2 * u)
+
+    def time_scale(self):
+        return 1.0 - 0.7 * self.slow_k()  # 0.3 at full slow-mo
 
     def stamp(self, glyph, caption, x, y, size=120, color=GOLD):
         self.stamps.append(Stamp(self.art, glyph, caption, x, y, size, color))
 
     def update(self, dt, real_dt):
+        # camera/post effects run on real time so they play out even through hit-stop and slow-mo
+        self.t += real_dt
         self.shake.update(real_dt)
-        self.flash = max(0.0, self.flash - real_dt * 3.0)
+        self.flash = max(0.0, self.flash - real_dt * 6.0)  # a sharp pop; a slow fade reads as fog
+        self.slowmo = max(0.0, self.slowmo - real_dt)
+        self.punch[1] += real_dt
+        for s in self.shocks:
+            s[2] += real_dt
+        self.shocks = [s for s in self.shocks if s[2] < self.SHOCK]
         for st in self.stamps:
             if not st.landed and st.age >= 0.11:
                 st.landed = True
@@ -128,17 +167,22 @@ class World:
             h.update(dt)
         self.halves = [h for h in self.halves if not h.gone()]
         self.particles.update(dt)
+        self.particles.blur = dt / real_dt if real_dt > 0 else 1.0
         self.stains.update(dt)
         for s in self.slashes:
             s[5] += dt
         self.slashes = [s for s in self.slashes if s[5] < 0.16]
         for r in self.rings:
             r[2] += dt
-        self.rings = [r for r in self.rings if r[2] < 0.6]
-        self.petal_t -= dt
-        if self.petal_t <= 0:
-            self.petal_t = random.uniform(0.6, 1.6)
-            self.particles.petal()
+        self.rings = [r for r in self.rings if r[2] < self.SHOCK]
+        self.mote_t -= dt
+        if self.mote_t <= 0:
+            self.mote_t = random.uniform(0.15, 0.35)
+            self.particles.mote()
+        self.ember_t -= dt
+        if self.ember_t <= 0:  # rare spark drifting up from the lanterns below
+            self.ember_t = random.uniform(2.5, 6.0)
+            self.particles.lantern_ember()
 
     def draw(self, screen, extra=None):
         add = self.app.add  # cleared once per frame by App
@@ -154,9 +198,12 @@ class World:
             h.draw(L)
         for b in self.bodies:
             if b.alive:
-                if b.special:
-                    pulse = 0.75 + 0.25 * math.sin(self.shake.t * 8)
-                    g = self.art.soft(b.r * 1.7, tuple(int(c * pulse * 0.8) for c in b.ft.juice), False)
+                if b.special:  # aura + slowly turning light rays, all emissive so the bloom picks them up
+                    col = b.ft.juice
+                    pulse = 0.8 + 0.2 * math.sin(self.t * 6)
+                    rays = pygame.transform.rotate(ray_burst(int(b.r * 3.4), shade(col, 0.6)), self.t * 22)
+                    add.blit(rays, rays.get_rect(center=(b.x, b.y)), special_flags=pygame.BLEND_RGB_ADD)
+                    g = glow(self.art, b.r * 1.9, col, 0.55 * pulse)
                     add.blit(g, g.get_rect(center=(b.x, b.y)), special_flags=pygame.BLEND_RGB_ADD)
                 b.draw(L)
         if extra:
@@ -166,16 +213,22 @@ class World:
             k = 1 - age / 0.16
             c = (int(255 * k), int(255 * k), int(240 * k))
             pygame.draw.line(add, c, (x - dx * r * 1.4, y - dy * r * 1.4), (x + dx * r * 1.4, y + dy * r * 1.4), max(1, int(7 * k)))
-        for x, y, age in self.rings:
-            k = age / 0.6
-            c = tuple(int(v * (1 - k)) for v in (255, 200, 120))
-            pygame.draw.circle(add, c, (x, y), 30 + k * 380, max(1, int(14 * (1 - k))))
+        for x, y, age in self.rings:  # the shockwave's visible front: same radius as the GPU distortion ring
+            k = age / self.SHOCK
+            # on the GPU the distortion carries the wave, so its glowing front stays faint
+            c = shade((255, 190, 120), (0.55 if self.app.gpu is None else 0.2) * (1 - k) ** 2)
+            pygame.draw.circle(add, c, (x, y), 20 + k * 0.6 * H, max(1, int(10 * (1 - k))))
+        ox, oy = self.shake.offset()
+        rox, roy = round(ox), round(oy)
         if self.app.gpu is None:  # the GPU path composites (and blooms) the glow layer itself
             L.blit(add, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
-        ox, oy = self.shake.offset()
-        if ox or oy:
+        elif rox or roy:  # shake the world's glow with the world (the blade, drawn later by App, stays put)
+            add.scroll(rox, roy)
+            add.fill((0, 0, 0), (0 if rox > 0 else W + rox, 0, abs(rox), H))
+            add.fill((0, 0, 0), (0, 0 if roy > 0 else H + roy, W, abs(roy)))
+        if rox or roy:
             screen.fill(LACQUER)
-        screen.blit(L, (round(ox), round(oy)))
+        screen.blit(L, (rox, roy))
 
     def draw_overlay(self, screen):
         for s in self.stamps:
@@ -185,7 +238,18 @@ class World:
             screen.fill((int(255 * self.flash),) * 3, special_flags=pygame.BLEND_RGB_ADD)
 
     def fx_params(self):
-        return {"flash": self.flash}
+        """Post-fx for this frame (see PostFX.render); every value decays back to neutral on its own."""
+        k = self.slow_k()
+        z, age = self.punch
+        punch = 1.0 + (z - 1.0) * (1 - age / self.PUNCH) ** 2 if age < self.PUNCH else 1.0
+        ox, oy = self.shake.offset()
+        shocks, aberration = [], 0.0
+        for x, y, age in self.shocks[-2:]:
+            u = age / self.SHOCK
+            shocks.append(((x + ox) / W, (y + oy) / H, 0.6 * u, 0.04 * (1 - u)))
+            aberration = max(aberration, 0.012 * (1 - u))
+        return {"zoom": max(punch, 1.0 + 0.03 * k), "shocks": shocks, "aberration": aberration,
+                "saturation": 1.0 - 0.35 * k, "flash": self.flash}
 
 
 class SliceButton:
@@ -449,6 +513,10 @@ class Play(Scene):
         self.stats["sliced"] += 1
         self.combo += 1
         self.combo_t = 0.28
+        if self.combo == 3:  # the camera answers a combo the moment it happens, not when it's tallied
+            w.zoom_punch(1.015)
+        elif self.combo == 4:
+            w.slow()
         self.combo_pos = (b.x, b.y)
         if b.special:
             name, glyph, cap, dur = {"freeze": ("freeze", "凍", "FREEZE", 6.0), "frenzy": ("frenzy", "嵐", "FRENZY", 4.5),
@@ -457,6 +525,14 @@ class Play(Scene):
             w.stamp(glyph, cap, b.x, b.y, 120, b.ft.juice)
             w.particles.sparks(b.x, b.y, b.ft.juice, 50, 800)
             self.app.audio.play("power")
+
+    def slice(self):
+        for seg in self.app.segments:
+            for b in self.w.bodies:
+                if b.alive and seg_hits_circle(*seg, b.x, b.y, b.r * 1.05):
+                    self.hit(b, seg)
+                    if self.state != "play":
+                        return
 
     def finish_combo(self):
         if self.combo >= 3:
@@ -503,7 +579,7 @@ class Play(Scene):
             self.app.audio.fuse(False)
             return
         w = self.w
-        wdt = dt * (0.4 if self.freeze > 0 else 1.0)
+        wdt = dt * (0.4 if self.freeze > 0 else 1.0) * w.time_scale()
         w.update(wdt, dt)
         self.score_pop = max(0.0, self.score_pop - dt)
         self.strike_pop = [max(0.0, p - dt) for p in self.strike_pop]
@@ -512,6 +588,8 @@ class Play(Scene):
         self.misses = [m for m in self.misses if m[1] < 1.2]
         self.state_t += dt
         if w.hitstop > 0:
+            if self.state == "play":
+                self.slice()  # hit-stop freezes the picture, never the blade: a swipe through it still cuts
             return
         if self.state == "ready" and self.state_t > 1.1:
             self.state, self.state_t = "play", 0.0
@@ -546,12 +624,7 @@ class Play(Scene):
                     kind = random.choices(REGULAR, WEIGHTS)[0]
                     x0 = -40 if side < 0 else W + 40
                     w.throw(kind, x0, random.uniform(H * 0.4, H * 0.85), -side * random.uniform(380, 700), -random.uniform(450, 850))
-            for seg in self.app.segments:
-                for b in w.bodies:
-                    if b.alive and seg_hits_circle(*seg, b.x, b.y, b.r * 1.05):
-                        self.hit(b, seg)
-                        if self.state != "play":
-                            break
+            self.slice()
             if self.combo:
                 self.combo_t -= dt
                 if self.combo_t <= 0:
@@ -878,6 +951,17 @@ class App:
                 self.last_swoosh = self.now
                 self.audio.play("swoosh", 0.55)
         self.trail.update(self.now)
+        w = getattr(self.scene, "w", None)
+        if w and self.speed > 1500 and len(pts) >= 2:  # sparks thrown off the blade tip on a fast flick
+            (ax, ay), (bx, by) = pts[-2], pts[-1]
+            L = math.hypot(bx - ax, by - ay) or 1
+            col = BLADES[self.save["blade"]][2]
+            for _ in range(2):
+                sp = random.uniform(120, 420)
+                j = random.uniform(-0.6, 0.6)
+                vx, vy = -(bx - ax) / L, -(by - ay) / L
+                w.particles.add(bx, by, (vx - vy * j) * sp, (vy + vx * j) * sp, random.uniform(0.15, 0.28),
+                                random.uniform(1, 1.8), col, "spark", 0.6)
         self.scene.update(dt)
         self.add.fill((0, 0, 0))
         self.scene.draw(self.frame)
@@ -896,7 +980,7 @@ class App:
             return
         if self.gpu is None:
             self.add.fill((0, 0, 0), box)  # the world's glow is already on the frame; don't add it twice
-        self.trail.draw(self.add, colors, self.now)
+        self.trail.draw(self.add, colors, self.now, outer=self.gpu is None)
         glow = self.art.soft(16 if self.speed > SLICE_SPEED else 11, colors[1], False)
         self.add.blit(glow, glow.get_rect(center=self.mouse), special_flags=pygame.BLEND_RGB_ADD)
         pygame.draw.circle(self.add, colors[2], self.mouse, 3)
