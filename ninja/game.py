@@ -8,8 +8,9 @@ import pygame
 from .art import Art, Fonts, FRUITS, REGULAR, WEIGHTS, SPECIALS, _font
 from .audio import Audio
 from .entities import Body, Half, seg_hits_circle, rotate_vec
+from .hud import label, brush_x, draw_play_hud
 from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade
-from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES
+from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
 SLICE_SPEED = 300  # px/s — just moving the cursor slices; a slow drift doesn't
 MAX_JUMP = 350  # px in one motion event
@@ -46,19 +47,6 @@ def write_save(data):
         pass
 
 
-def label(surf, fonts, font, s, color, pos, anchor="center", tracking=0, shadow=True, alpha=255):
-    """Cached text with a soft shadow, so it reads over the photoreal wall without a hard outline."""
-    img = fonts.text(font, s, color, tracking)
-    r = img.get_rect(**{anchor: pos})
-    if shadow:
-        sh = fonts.shadow(font, s, tracking)
-        sh.set_alpha(int(alpha * 0.9))
-        surf.blit(sh, sh.get_rect(center=(r.centerx, r.centery + 3)))
-    img.set_alpha(alpha)
-    surf.blit(img, r)
-    return r
-
-
 def lerp_rgb(a, b, t):
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
@@ -78,42 +66,6 @@ def blurred(surf, tint):
     out = pygame.transform.smoothscale(small, (W, H))
     out.fill(tint, special_flags=pygame.BLEND_RGB_MULT)
     return out
-
-
-_BRUSH = {}
-
-
-def brush_x(size, color, outline=False):
-    """A strike mark painted as two brush strokes: blunt where the brush lands, tapering to a point as it lifts.
-    Supersampled 3x for clean edges; cached per (size, colour, outline)."""
-    key = (size, color, outline)
-    if key in _BRUSH:
-        return _BRUSH[key]
-    ss = 3
-    d = size * ss
-    m = pygame.Surface((d, d), pygame.SRCALPHA)
-    p = d * 0.1
-    for x0, y0, x1, y1, bow, wmax in ((p, p * 1.3, d - p, d - p * 0.8, 0.05, 0.17), (d - p * 1.2, p, p * 1.1, d - p * 1.1, -0.04, 0.14)):
-        L = math.hypot(x1 - x0, y1 - y0)
-        ux, uy = (x1 - x0) / L, (y1 - y0) / L
-        nx, ny = -uy, ux
-        left, right = [], []
-        for i in range(21):
-            t = i / 20
-            w = d * wmax * (0.65 + 0.35 * min(1.0, t / 0.18)) * max(0.03, 1 - t ** 1.8) / 2
-            cx = x0 + ux * L * t + nx * bow * L * math.sin(math.pi * t)
-            cy = y0 + uy * L * t + ny * bow * L * math.sin(math.pi * t)
-            left.append((cx + nx * w, cy + ny * w))
-            right.append((cx - nx * w, cy - ny * w))
-        pygame.draw.polygon(m, (*color, 255), left + right[::-1])
-    if outline:  # trace the union of both strokes, so the crossing doesn't show inside an empty mark
-        pts = pygame.mask.from_surface(m).outline()
-        m = pygame.Surface((d, d), pygame.SRCALPHA)
-        if len(pts) > 2:
-            pygame.draw.lines(m, (*color, 255), True, pts, ss + 1)
-    img = pygame.transform.smoothscale(m, (size, size))
-    _BRUSH[key] = img
-    return img
 
 
 _CHEVRONS = {}
@@ -168,6 +120,7 @@ class World:
         self.slowmo = 0.0  # real seconds of slow-mo left
         self.shocks = []  # [x, y, age]
         self.t = 0.0
+        self.gflip = 1.0  # gravity sign: -1 while a chaos fruit has turned the dojo upside down
         self.mote_t = 0.0
         self.ember_t = random.uniform(1.0, 3.0)
         for _ in range(40):  # the dojo already has dust hanging in the lamplight
@@ -252,10 +205,11 @@ class World:
         if self.hitstop > 0:
             self.hitstop -= real_dt
             return
+        g = GRAVITY * self.gflip
         for b in self.bodies:
-            b.update(dt)
+            b.update(dt, g)
         for h in self.halves:
-            h.update(dt)
+            h.update(dt, g)
         self.halves = [h for h in self.halves if not h.gone()]
         self.particles.update(dt)
         self.particles.blur = self.time_scale()  # slow-mo shortens streaks; freeze doesn't
@@ -430,7 +384,8 @@ class Menu(Scene):
         self.w = World(app)
         best = app.save["best"]
         self.buttons = []
-        for (mode, kind), x in zip((("classic", "watermelon"), ("arcade", "dragonfruit"), ("zen", "peach")), (W * 0.25, W * 0.5, W * 0.75)):
+        for (mode, kind), x in zip((("classic", "watermelon"), ("arcade", "dragonfruit"), ("zen", "peach"), ("path", "golden")),
+                                   (W * 0.17, W * 0.39, W * 0.61, W * 0.83)):
             m = MODES[mode]
             b = SliceButton(self.w, kind, x, 388, m["glyph"], m["title"], m["hint"], f"Best {best[mode]}")
             b.mode = mode
@@ -508,7 +463,7 @@ class Menu(Scene):
         if e.type == pygame.KEYDOWN:
             if e.key == pygame.K_ESCAPE:
                 self.app.running = False
-            elif e.key in (pygame.K_1, pygame.K_2, pygame.K_3) and not self.chosen:
+            elif pygame.K_1 <= e.key <= pygame.K_4 and not self.chosen:
                 b = self.buttons[e.key - pygame.K_1]
                 b.cut()
                 self.chosen, self.chosen_t = b.mode, 0.0
@@ -618,7 +573,7 @@ class Menu(Scene):
         label(ui, f, f.mono13, hint, MUTED, (x0, y + 28), "midleft")
         # controls: bottom-right, quiet
         label(ui, f, f.mono13, "Move the cursor fast to slice a fruit", MUTED, (W - 48, y), "midright")
-        label(ui, f, f.mono13, "1 2 3 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
+        label(ui, f, f.mono13, "1–4 quick start  ·  ← → blade  ·  M mute  ·  F11 fullscreen  ·  Esc quit",
               MUTED, (W - 48, y + 28), "midright")
         self.w.draw_overlay(screen)
 
@@ -628,13 +583,14 @@ class Menu(Scene):
 class Play(Scene):
     def __init__(self, app, mode):
         self.app, self.mode = app, mode
+        self.features = MODE_FEATURES[mode]
         self.w = World(app)
         self.score = 0
         self.best_prev = app.save["best"][mode]
         self.strikes = 0
         self.strike_pop = [0.0, 0.0, 0.0]
         self.misses = []  # red X where a fruit dropped
-        self.time = {"classic": None, "arcade": 60.0, "zen": 90.0}[mode]
+        self.time = {"classic": None, "arcade": 60.0, "zen": 90.0, "path": None}[mode]
         self.elapsed = 0.0
         self.spawn_t = 1.3
         self.queue = []
@@ -642,7 +598,8 @@ class Play(Scene):
         self.freeze = self.frenzy = self.double = 0.0
         self.frenzy_spawn = 0.0
         self.special_cd = 7.0
-        self.next_life = 100
+        self.life_every = 150 if mode == "path" else 100  # classic: a strike back per 100; path: a life per 150
+        self.next_life = self.life_every
         self.stats = {"sliced": 0, "best_combo": 0, "bombs": 0, "missed": 0}
         self.state, self.state_t = "ready", 0.0
         self.paused = False
@@ -689,14 +646,15 @@ class Play(Scene):
 
     def interval(self):
         e = self.elapsed
-        return {"classic": max(0.85, 2.2 - e * 0.016), "arcade": max(0.6, 1.4 - e * 0.012), "zen": max(0.9, 1.7 - e * 0.008)}[self.mode]
+        return {"classic": max(0.85, 2.2 - e * 0.016), "arcade": max(0.6, 1.4 - e * 0.012), "zen": max(0.9, 1.7 - e * 0.008),
+                "path": max(0.75, 2.0 - e * 0.014)}[self.mode]
 
     # --- scoring ---
     def add_score(self, n):
         self.score += n
-        if self.mode == "classic":
+        if self.mode in ("classic", "path"):
             while self.score >= self.next_life:
-                self.next_life += 100
+                self.next_life += self.life_every
                 if self.strikes > 0:
                     self.strikes -= 1
                     self.w.popups.add("+1 life", W - 120, 112, GOLD, True)
@@ -710,6 +668,8 @@ class Play(Scene):
             if self.mode == "classic":
                 self.state, self.state_t = "dying", 0.0
                 self.app.audio.fuse(False)
+            elif self.mode == "path":
+                self.lose_life(b.x, "bomb")
             else:
                 self.score = max(0, self.score - 10)
                 w.popups.add("-10", b.x, b.y - 40, HANKO, True)
@@ -759,13 +719,23 @@ class Play(Scene):
         self.stats["best_combo"] = max(self.stats["best_combo"], self.combo)
         self.combo = 0
 
+    @property
+    def lives(self):
+        """Path mode's lives are the classic strike marks counted the other way (None in the other modes)."""
+        return 3 - self.strikes if self.mode == "path" else None
+
     def strike(self, b):
         self.stats["missed"] += 1
-        if self.mode != "classic" or self.state != "play":
+        if self.mode in ("classic", "path"):
+            self.lose_life(b.x, "drop")
+
+    def lose_life(self, x, reason):
+        """A strike (classic) or a lost life (path; `reason` is "drop" or "bomb"): a red brush mark where it happened."""
+        if self.state != "play":
             return
         self.strike_pop[self.strikes] = 0.35
         self.strikes += 1
-        self.misses.append([min(max(b.x, 40), W - 40), 0.0])
+        self.misses.append([min(max(x, 40), W - 40), 0.0])
         self.w.shake.kick(0.3)
         self.app.audio.play("miss")
         if self.strikes >= 3:
@@ -895,61 +865,6 @@ class Play(Scene):
             img.set_alpha(a)
             L.blit(img, img.get_rect(center=(x, H - 46)))
 
-    def draw_hud(self, screen):
-        """`screen` is the UI layer: above the post-processing, so the camera never moves, fringes or dims it."""
-        f = self.app.art.fonts
-        # score: left, gold, the number rolls toward the real value
-        label(screen, f, f.mono12, "SCORE", MUTED, (42, 34), "midleft", tracking=4)
-        sr = label(screen, f, f.score, str(round(self.shown)), GOLD, (38, 44), "topleft")
-        best = max(self.best_prev, self.score)
-        label(screen, f, f.mono13, f"Best {best}", MUTED, (42, sr.bottom + 6), "midleft")
-        if self.mode == "classic":  # strikes: three brush marks, empty until missed
-            for i in range(3):
-                cx = W - 66 - (2 - i) * 52
-                if i < self.strikes:
-                    img = brush_x(40, HANKO)
-                    p = self.strike_pop[i]
-                    if p > 0:  # lands big and settles, like the brush hitting paper
-                        img = pygame.transform.smoothscale_by(img, 1 + p * 1.6)
-                    img.set_alpha(255)
-                else:
-                    img = brush_x(40, WASHI, outline=True)
-                    img.set_alpha(64)  # 25 %
-                screen.blit(img, img.get_rect(center=(cx, 62)))
-            y = 112
-        else:
-            label(screen, f, f.mono12, "TIME", MUTED, (W - 42, 34), "midright", tracking=4)
-            t = max(0.0, self.time)
-            col = HANKO if t <= 5 else GOLD if t <= 10 else WASHI
-            s = f"{int(t) // 60}:{int(t) % 60:02d}" if t > 0 or self.state != "play" else "0:00"
-            img = f.text(f.timer, s, col)
-            sh = f.shadow(f.timer, s)
-            r = img.get_rect(topright=(W - 38, 44))
-            if t <= 5 and self.state == "play":  # each second lands with a pulse
-                p = (math.ceil(t) - t) ** 3 if t > 0 else 0
-                k = 1 + 0.14 * p
-                img = pygame.transform.smoothscale_by(img, k)
-                sh = pygame.transform.smoothscale_by(sh, k)
-                r = img.get_rect(midright=r.midright)
-            sh.set_alpha(230)
-            screen.blit(sh, sh.get_rect(center=(r.centerx, r.centery + 3)))
-            img.set_alpha(255)
-            screen.blit(img, r)
-            y = r.bottom + 18
-        # power-up chips: what's active and how long it has left
-        for val, total, name, col in ((self.freeze, 6.0, "FREEZE", FRUITS["freeze"].juice),
-                                      (self.frenzy, 4.5, "FRENZY", FRUITS["frenzy"].juice),
-                                      (self.double, 8.0, "DOUBLE ×2", FRUITS["double"].juice)):
-            if val > 0:
-                label(screen, f, f.mono12, name, col, (W - 42, y), "midright", tracking=3)
-                track = pygame.Surface((140, 2), pygame.SRCALPHA)
-                track.fill((*WASHI, 40))
-                screen.blit(track, (W - 42 - 140, y + 14))
-                fill = int(140 * val / total)
-                if fill > 0:
-                    screen.fill(col, (W - 42 - fill, y + 14, fill, 2))
-                y += 38
-
     def draw_pause(self, screen):
         f = self.app.art.fonts
         ui = self.app.ui
@@ -987,7 +902,7 @@ class Play(Scene):
             ember.set_alpha(int(255 * gain * k * (0.75 + 0.25 * math.sin(w.t * 5))))
             # it is light, not paint: on the GPU it goes to the glow layer so the bloom carries it
             (screen if self.app.gpu is None else self.app.add).blit(ember, (0, 0))
-        self.draw_hud(self.app.ui)
+        draw_play_hud(self, self.app.ui)
         w.draw_overlay(screen)
         if self.paused:
             self.draw_pause(screen)

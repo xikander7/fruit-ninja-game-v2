@@ -79,9 +79,9 @@ class Body:
         self.entered = False
         self.age, self.flight, self.dt = 0.0, flight_time(vy, static), 0.0
 
-    def update(self, dt):
+    def update(self, dt, g=GRAVITY):
         if not self.static:
-            self.vy += GRAVITY * dt
+            self.vy += g * dt
             self.x += self.vx * dt
             self.y += self.vy * dt
             if self.y < H - self.r:
@@ -94,7 +94,8 @@ class Body:
         return depth_scale(self.age, self.flight)
 
     def gone(self):
-        return not self.static and self.vy > 0 and self.y > H + self.r * 2
+        # moving away past either edge: gravity can be flipped, so a fruit can also leave over the top
+        return not self.static and (self.vy > 0 and self.y > H + self.r * 2 or self.vy < 0 and self.y < -self.r * 2)
 
     def draw_shadow(self, surf):
         draw_shadow(surf, self.shadow, self.x, self.y, self.ang, self.scale())
@@ -114,8 +115,8 @@ class Half:
         self.age, self.flight = (parent.age, parent.flight) if parent else (0.0, None)
         self.dt = 0.0
 
-    def update(self, dt):
-        self.vy += GRAVITY * dt
+    def update(self, dt, g=GRAVITY):
+        self.vy += g * dt
         self.x += self.vx * dt
         self.y += self.vy * dt
         self.ang += self.spin * dt
@@ -123,7 +124,7 @@ class Half:
         self.dt = dt
 
     def gone(self):
-        return self.vy > 0 and self.y > H + 150
+        return self.vy > 0 and self.y > H + 150 or self.vy < 0 and self.y < -150
 
     def scale(self):
         return depth_scale(self.age, self.flight)
