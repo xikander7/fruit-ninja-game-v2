@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+assets/raw/
+dist/
+build/
+web/assets/
