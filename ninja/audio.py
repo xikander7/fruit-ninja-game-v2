@@ -7,6 +7,8 @@ import re
 
 import pygame
 
+from .settings import resource_path
+
 SR = 22050
 IN_SCALE = [0, 1, 5, 7, 8]  # Japanese "in" (miyako-bushi) scale, semitones over the root
 
@@ -167,7 +169,7 @@ def music(rng):
     return out
 
 
-AUDIO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "audio")
+AUDIO_DIR = str(resource_path("assets", "audio"))
 # (boss_hit/boss_roar files are bosshit_N/bossroar_N: the filename regex below allows no underscore in a stem)
 # file prefix -> game sound name (ui clicks double as the quiet "throw" whoosh)
 GROUPS = {"slash": "swoosh", "splat": "splat", "explode": "explode", "fuse": "fuse", "combo": "combo",

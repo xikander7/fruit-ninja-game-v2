@@ -6,9 +6,10 @@ from dataclasses import dataclass
 
 import pygame
 
-from .settings import W, H, WASHI, HANKO, LACQUER, CEDAR, STEEL
+from .settings import W, H, WASHI, HANKO, LACQUER, CEDAR, STEEL, resource_path
 
-SPRITE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "sprites")
+SPRITE_DIR = str(resource_path("assets", "sprites"))
+LOADED = {"sprites": 0, "fonts": 0}  # files actually read (the packaged builds' smoke test reports these)
 # juice splash photos (tools/build_sprites.py) and the direction each one flings its liquid, in degrees counter-
 # clockwise from +x as seen on screen; None = a radial crown that reads the same any way round
 SPLASHES = (("burst1", None), ("burst2", 0), ("drops1", 90), ("drops2", 8))
@@ -67,7 +68,7 @@ def shade_of(c, k):
     return tuple(max(0, min(255, int(v * k))) for v in c)
 
 
-FONT_DIR = os.path.join(os.path.dirname(SPRITE_DIR), "fonts")
+FONT_DIR = str(resource_path("assets", "fonts"))
 
 
 def _font(file, size, fallback, bold=False):
@@ -75,7 +76,9 @@ def _font(file, size, fallback, bold=False):
     path = os.path.join(FONT_DIR, file)
     if os.path.exists(path):
         try:
-            return pygame.font.Font(path, size)
+            font = pygame.font.Font(path, size)
+            LOADED["fonts"] += 1
+            return font
         except (OSError, pygame.error):
             pass
     return pygame.font.SysFont(fallback, size, bold=bold)
@@ -380,6 +383,7 @@ def load_sprite(name, ext="png"):
     if not os.path.isfile(path):
         return None
     img = pygame.image.load(path)
+    LOADED["sprites"] += 1
     return img.convert_alpha() if ext == "png" else img.convert()
 
 

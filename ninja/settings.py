@@ -1,4 +1,13 @@
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def resource_path(*parts):
+    """A bundled file: under the PyInstaller unpack dir (sys._MEIPASS) in the .exe, else under the repo."""
+    return Path(getattr(sys, "_MEIPASS", REPO_ROOT)) / Path(*parts)
+
 
 W, H = 1280, 720
 FPS = 120
