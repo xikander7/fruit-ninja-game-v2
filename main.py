@@ -1,7 +1,19 @@
+import asyncio
 import os
 import sys
 
 from ninja.game import App
+
+
+async def main():
+    """The browser loop (pygbag): one frame, then hand control back to the page."""
+    app = App()
+    if sys.platform == "emscripten":
+        from ninja import art
+        print(f"WEB assets: sprites={art.LOADED['sprites']} fonts={art.LOADED['fonts']} sounds={len(app.audio.files)}")
+    while app.running:
+        app.frame_step()
+        await asyncio.sleep(0)  # yields to the browser each frame (pygbag requirement)
 
 
 def smoke():
@@ -10,8 +22,7 @@ def smoke():
     from ninja import art, audio as snd
     app = App()
     for _ in range(180):
-        app.step(1 / 60, pygame.event.get())
-        app.present(app.scene.fx_params())
+        app.frame_step()
     fonts = "bundled" if art.LOADED["fonts"] else "fallback"
     audio = sum(len(v) for k, v in app.audio.s.items() if k in app.audio.files and k not in snd.ALIASES)  # files read
     line = (f"SMOKE OK sprites={art.LOADED['sprites']} fonts={fonts} audio={audio} "
@@ -25,7 +36,9 @@ def smoke():
 
 
 if __name__ == "__main__":
-    if os.environ.get("NINJA_SMOKE") == "1":
+    if sys.platform == "emscripten":
+        asyncio.run(main())
+    elif os.environ.get("NINJA_SMOKE") == "1":
         smoke()
     else:
         App().run()

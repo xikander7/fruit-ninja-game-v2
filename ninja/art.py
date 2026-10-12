@@ -592,6 +592,27 @@ def make_background(seed=7):
     return bg
 
 
+GLYPH_DIR = str(resource_path("assets", "glyphs"))  # kanji stencils (tools/build_glyphs.py), rendered at 120 px
+GLYPH_SIZE = 120
+_system_kanji = None  # is there a Japanese system font? (looked up once)
+
+
+def kanji(fonts, glyph, px):
+    """A black glyph at font size px: from a system Japanese font when there is one, else from the bundled stencil
+    (the browser and most Linux machines have no CJK font: pygame would draw an empty box)."""
+    global _system_kanji
+    if _system_kanji is None:
+        try:
+            _system_kanji = bool(pygame.font.match_font(fonts.kanji))
+        except Exception:
+            _system_kanji = False
+    path = os.path.join(GLYPH_DIR, f"{ord(glyph[0]):x}.png")
+    if not _system_kanji and len(glyph) == 1 and os.path.isfile(path):
+        img = pygame.image.load(path).convert_alpha()
+        return pygame.transform.smoothscale_by(img, px / GLYPH_SIZE)
+    return pygame.font.SysFont(fonts.kanji, px, bold=True).render(glyph, True, (0, 0, 0))
+
+
 def make_seal(fonts, glyph, size, rng=None):
     """A hanko impression, ink only: a red square with the glyph left uncut (白文), worn at the edges the way a
     real stone seal prints. The game's signature mark."""
@@ -607,8 +628,7 @@ def make_seal(fonts, glyph, size, rng=None):
             j = size * 0.012
             pts.append((a[0] + (b[0] - a[0]) * t + rng.uniform(-j, j), a[1] + (b[1] - a[1]) * t + rng.uniform(-j, j)))
     pygame.draw.polygon(s, (*HANKO, 255), pts)
-    font = pygame.font.SysFont(fonts.kanji, int(size * 0.6), bold=True)
-    g = font.render(glyph, True, (0, 0, 0))  # alpha-only stencil: subtracting it cuts the glyph out of the ink
+    g = kanji(fonts, glyph, int(size * 0.6))  # alpha-only stencil: subtracting it cuts the glyph out of the ink
     s.blit(g, g.get_rect(center=(size / 2, size / 2 + size * 0.02)), special_flags=pygame.BLEND_RGBA_SUB)
     # uneven ink: a coarse noise field multiplied into alpha, so the red breathes instead of reading as a flat fill
     n = max(4, size // 6)
