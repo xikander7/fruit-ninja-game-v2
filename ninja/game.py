@@ -13,8 +13,9 @@ from .powers import KEYS as POWER_KEYS, KI_PER_COMBO, KiMeter, on_cut, tick_powe
 from .fever import Fever, on_cut as fever_cut, tick_fever, fever_fx
 from .boss import BossDirector, slice_boss, tick_boss
 from .hazards import Hazards, roll_hazard, launch_hazard, on_hit as hazard_hit, slice_hazards, tick_hazards, throw_shuriken, blade_colors, draw as draw_hazards
-from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade, emit, blurred
-from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
+from .title import TitleIntro
+from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade, blurred
+from .settings import CAPTION, W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
 SLICE_SPEED = 300  # px/s — just moving the cursor slices; a slow drift doesn't
 MAX_JUMP = 350  # px in one motion event
@@ -341,7 +342,6 @@ class Scene:
 
 class Menu(Scene):
     SETTLE = 1.2  # s for the background to drift from 1.04x to rest
-    SWEEP_AT, SWEEP = 0.25, 0.7  # the katana light crossing the title
 
     def __init__(self, app):
         self.app = app
@@ -363,37 +363,11 @@ class Menu(Scene):
         self.bg_rest = pygame.transform.smoothscale_by(self.bg_src, self.bg_base)
         self.par = [0.0, 0.0]
         self.set_bg()
-        f = app.art.fonts
-        self.title = f.text(f.title, "Fruit Ninja", WASHI, 2)
-        self.title_sh = f.shadow(f.title, "Fruit Ninja", 2)
-        self.title_rect = self.title.get_rect(center=(W / 2, 122))
-        # the same letters, warm white on black: the part under the sweep is added to the glow layer as a glint
-        self.title_glint = pygame.Surface(self.title.get_size())
-        self.title_glint.blit(f.text(f.title, "Fruit Ninja", (255, 240, 214), 2), (0, 0))
-        self.streak = self.make_streak(self.title.get_height() + 70)
-        self.band = self.make_band(120)
+        self.intro = TitleIntro(app, self.w)
 
-    @staticmethod
-    def make_streak(h):
-        """A slanted blade of light: a hot core with a soft falloff, fading out at both tips."""
-        w = 48
-        s = pygame.Surface((w, h))
-        for dx in range(-w // 2, w // 2):
-            k = math.exp(-(dx / 3.0) ** 2) + 0.35 * math.exp(-(dx / 11.0) ** 2)
-            pygame.draw.line(s, shade((255, 236, 205), min(1.0, k)), (w // 2 + dx, 0), (w // 2 + dx, h))
-        fade = pygame.Surface((w, h))
-        for y in range(h):
-            fade.fill(shade((255, 255, 255), math.sin(math.pi * y / (h - 1)) ** 0.8), (0, y, w, 1))
-        s.blit(fade, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
-        return pygame.transform.rotate(s.convert_alpha(), -14)  # alpha: the rotated corners come out clear, not grey
-
-    @staticmethod
-    def make_band(w):
-        """Horizontal falloff multiplied into the title glint, so only the letters right at the streak catch light."""
-        s = pygame.Surface((w, 1))
-        for x in range(w):
-            s.set_at((x, 0), shade((255, 255, 255), math.exp(-((x - w / 2) / (w / 6)) ** 2)))
-        return s
+    @property
+    def intro_done(self):
+        return self.intro.done
 
     def set_bg(self):
         """Entry drift (1.04x -> 1.0x of rest scale, eased) then a gentle parallax against the mouse."""
@@ -425,6 +399,7 @@ class Menu(Scene):
 
     def handle(self, e):
         if e.type == pygame.KEYDOWN:
+            self.intro.skip()  # any key skips the intro (and still does what it does)
             if e.key == pygame.K_ESCAPE:
                 self.app.running = False
             elif pygame.K_1 <= e.key <= pygame.K_4 and not self.chosen:
@@ -450,7 +425,10 @@ class Menu(Scene):
         self.par[0] += (tx - self.par[0]) * k
         self.par[1] += (ty - self.par[1]) * k
         self.set_bg()
+        if self.app.speed > 1500:  # a fast swipe skips the intro too
+            self.intro.skip()
         self.w.update(dt, dt)
+        self.intro.update(dt)
         for b in self.buttons:
             if b.update(dt, self.app.segments, self.app.mouse) and not self.chosen:
                 self.chosen, self.chosen_t = b.mode, 0.0
@@ -464,52 +442,11 @@ class Menu(Scene):
     def fx_params(self):
         return self.w.fx_params()
 
-    def draw_title(self, screen, ui):
-        """The title is art on the wall (its glint lives in the glow layer); the subtitle is UI."""
-        f = self.app.art.fonts
-        r = self.title_rect
-        u = (self.t - self.SWEEP_AT) / self.SWEEP
-        if u <= 0:
-            return
-        e = 1 - (1 - min(u, 1.0)) ** 2  # the cut decelerates slightly as it leaves the last letter
-        sx = r.left - 40 + (r.width + 80) * e  # streak position; letters to its left are revealed
-        w = int(min(r.width, max(0, sx - r.left))) if u < 1 else r.width
-        if w > 0:
-            self.title_sh.set_alpha(230)
-            screen.blit(self.title_sh, (r.left - 6, r.top - 3), (0, 0, w + 6, self.title_sh.get_height()))
-            self.title.set_alpha(255)
-            screen.blit(self.title, r, (0, 0, w, r.height))
-        glow = max(0.0, 1 - max(0.0, u - 1) / 0.25)  # the light lingers a moment after the cut, then is gone
-        if glow > 0:
-            st = self.streak
-            if glow < 1:
-                st = st.copy()
-                st.fill(shade((255, 255, 255), glow), special_flags=pygame.BLEND_RGB_MULT)
-            emit(self.app, screen, st, st.get_rect(center=(sx, r.centery)).topleft)
-            bw = self.band.get_width()
-            x0 = int(sx - r.left - bw / 2)
-            clip = pygame.Rect(x0, 0, bw, r.height).clip(self.title_glint.get_rect())
-            if clip.w > 0:
-                g = self.title_glint.subsurface(clip).copy()
-                band = pygame.transform.scale(self.band, (bw, r.height))
-                g.blit(band, (0, 0), (clip.x - x0, 0, clip.w, r.height), special_flags=pygame.BLEND_RGB_MULT)
-                if glow < 1:
-                    g.fill(shade((255, 255, 255), glow), special_flags=pygame.BLEND_RGB_MULT)
-                emit(self.app, screen, g, (r.left + clip.x, r.top))
-        # subtitle settles in once the title is cut
-        a = int(255 * max(0.0, min(1.0, (u - 0.9) / 0.5)))
-        if a:
-            sub = label(ui, f, f.mono15, "NIGHT DOJO", GOLD, (W / 2, r.bottom + 14), tracking=7, alpha=a)
-            line = pygame.Surface((44, 1), pygame.SRCALPHA)  # per-pixel alpha: a faded opaque surface blits opaque
-            line.fill((*GOLD, a // 2))
-            ui.blit(line, (sub.left - 62, sub.centery))
-            ui.blit(line, (sub.right + 18, sub.centery))
-
     def draw(self, screen):
         f = self.app.art.fonts
         ui = self.app.ui
-        self.w.draw(screen)
-        self.draw_title(screen, ui)
+        self.w.draw(screen, self.intro.draw_world)
+        self.intro.draw_ui(ui)
         for b in self.buttons:
             b.draw(ui)
         # blade picker: small, bottom-left
@@ -1046,7 +983,7 @@ class App:
         pygame.init()
         self.fullscreen = False
         self.open_window()
-        pygame.display.set_caption("Fruit Ninja · Night Dojo")
+        pygame.display.set_caption(CAPTION)
         self.add = pygame.Surface((W, H))  # emissive layer: glows only, black = none
         self.ui = pygame.Surface((W, H), pygame.SRCALPHA)  # HUD and overlays, premultiplied: laid over after post-fx
         self.ui.fill(UI_CLEAR)

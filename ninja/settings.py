@@ -4,6 +4,9 @@ W, H = 1280, 720
 FPS = 120
 GRAVITY = 1250.0
 SAVE_PATH = Path.home() / ".fruit_ninja_dojo.json"
+TITLE = "Hanifa"  # the menu title is a signature: a person's name, spelled exactly
+SUBTITLE = "THE FRUIT NINJA"
+CAPTION = "Hanifa · The Fruit Ninja"
 
 # Palette: dark and few colours; light comes from the blade, juice and effects.
 INK = (10, 8, 8)

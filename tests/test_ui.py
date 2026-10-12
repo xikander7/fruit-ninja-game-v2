@@ -155,6 +155,44 @@ class Layers(unittest.TestCase):
         self.assertTrue(over.menu.body.alive)
 
 
+class TitleIntro(unittest.TestCase):
+    """Task 10: the menu opens with "Hanifa, the Fruit Ninja" signed in watermelon juice."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        game.SAVE_PATH = Path(self.tmp.name) / "save.json"
+        self.app = game.App()
+
+    def tearDown(self):
+        pygame.quit()
+        self.tmp.cleanup()
+
+    def test_title_strings(self):
+        from ninja import settings
+        self.assertEqual(settings.TITLE, "Hanifa")
+        self.assertEqual(settings.SUBTITLE, "THE FRUIT NINJA")
+        self.assertEqual(pygame.display.get_caption()[0], "Hanifa · The Fruit Ninja")
+
+    def test_intro_settles_within_two_seconds(self):
+        m = game.Menu(self.app)
+        self.app.scene, self.app.wipe = m, None
+        self.assertFalse(m.intro_done)
+        run(self.app, 30)
+        self.assertFalse(m.intro.melon.alive)  # cut at the apex by then
+        run(self.app, 90)  # 2.0 s in all
+        self.assertTrue(m.intro_done)
+
+    def test_any_key_skips_the_intro(self):
+        m = game.Menu(self.app)
+        self.app.scene, self.app.wipe = m, None
+        run(self.app, 5)
+        m.handle(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE, mod=0, unicode=" ", scancode=0))
+        self.assertTrue(m.intro_done)
+        self.assertNotIn(m.intro.melon, m.w.bodies)
+        run(self.app, 5)  # and the settled title draws fine
+        self.assertIsNone(m.chosen)  # a non-mode key only skips
+
+
 class SealDrop(unittest.TestCase):
     def test_drop_curve(self):
         self.assertAlmostEqual(stamp_scale(0.0), 1.8)
