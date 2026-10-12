@@ -473,8 +473,10 @@ class Trail:
 
     def draw(self, add, colors, now, outer=False):
         """Smoothed ribbon on the emissive layer: blade-coloured body, white core. Bloom does the glow on the GPU;
-        `outer` adds a thin coloured halo for the CPU path, which has no bloom."""
-        layers = ([(colors[0], 18)] if outer else []) + [(colors[1], 12), ((255, 255, 255), 4.5)]
+        `outer` adds a thin coloured halo for the CPU path, which has no bloom. An optional 4th colour replaces the
+        white core (a power's blade)."""
+        core = colors[3] if len(colors) > 3 else (255, 255, 255)
+        layers = ([(colors[0], 18)] if outer else []) + [(colors[1], 12), (core, 4.5)]
         for run in self.runs():
             run = catmull_rom(run, 4)
             n = len(run)

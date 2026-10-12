@@ -4,7 +4,9 @@ import math
 import pygame
 
 from .art import FRUITS
-from .settings import W, WASHI, GOLD, HANKO, MUTED
+from .fx import glow
+from .powers import KI_MAX
+from .settings import W, H, WASHI, GOLD, HANKO, MUTED
 
 
 def label(surf, fonts, font, s, color, pos, anchor="center", tracking=0, shadow=True, alpha=255):
@@ -18,6 +20,44 @@ def label(surf, fonts, font, s, color, pos, anchor="center", tracking=0, shadow=
     img.set_alpha(alpha)
     surf.blit(img, r)
     return r
+
+
+_CHEVRONS = {}
+
+
+def chevron(step, color):
+    """A thin < or > (step -1 / 1), anti-aliased by drawing 4x and smoothscaling (aalines only antialias over an
+    opaque surface, and the UI layer is transparent)."""
+    key = (step, color)
+    if key not in _CHEVRONS:
+        k = 4
+        s = pygame.Surface((12 * k, 18 * k), pygame.SRCALPHA)
+        pts = [((6 - 3 * step) * k, 2 * k), ((6 + 4 * step) * k, 9 * k), ((6 - 3 * step) * k, 16 * k)]
+        pygame.draw.lines(s, (*color, 255), False, pts, k * 3 // 2)  # 1.5 px: the weight aalines read at
+        _CHEVRONS[key] = pygame.transform.smoothscale(s, (12, 18))
+    return _CHEVRONS[key]
+
+
+_RINGS = {}
+
+
+def hairline_ring(r):
+    """A 1 px anti-aliased gold circle (cached: one per radius)."""
+    if r not in _RINGS:
+        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.aacircle(s, GOLD, (r + 2, r + 2), r, 1)
+        _RINGS[r] = s
+    return _RINGS[r]
+
+
+def thin_bar(ui, x, y, w, frac, color, h=2, right=False):
+    """A hairline track with a solid fill (power timers, the Ki meter)."""
+    track = pygame.Surface((w, h), pygame.SRCALPHA)
+    track.fill((*WASHI, 40))
+    ui.blit(track, (x, y))
+    fill = int(w * max(0.0, min(1.0, frac)))
+    if fill > 0:
+        ui.fill(color, (x + w - fill if right else x, y, fill, h))
 
 
 _BRUSH = {}
@@ -103,10 +143,36 @@ def draw_play_hud(play, ui):
                                   (play.double, 8.0, "DOUBLE ×2", FRUITS["double"].juice)):
         if val > 0:
             label(ui, f, f.mono12, name, col, (W - 42, y), "midright", tracking=3)
-            track = pygame.Surface((140, 2), pygame.SRCALPHA)
-            track.fill((*WASHI, 40))
-            ui.blit(track, (W - 42 - 140, y + 14))
-            fill = int(140 * val / total)
-            if fill > 0:
-                ui.fill(col, (W - 42 - fill, y + 14, fill, 2))
+            thin_bar(ui, W - 42 - 140, y + 14, 140, val / total, col, right=True)
             y += 38
+    pw = play.power
+    if pw is not None:  # the running superpower and its time, under the score
+        y = sr.bottom + 40
+        label(ui, f, f.mono12, pw.title, pw.color, (42, y), "midleft", tracking=3)
+        thin_bar(ui, 42, y + 14, 140, pw.left(), pw.color)
+    draw_ki(play, ui)
+
+
+KI_W = 180
+
+
+def draw_ki(play, ui):
+    """Bottom-left: a quiet hairline that fills with each cut. Full, it is the one thing on screen that glows, and
+    the keys for the three powers appear beside it."""
+    ki = play.ki
+    if ki is None:
+        return
+    f, app = play.app.art.fonts, play.app
+    x, y = 42, H - 40
+    full = ki.full and play.power is None
+    pulse = 0.5 + 0.5 * math.sin(play.w.t * 4.5)
+    label(ui, f, f.mono12, "KI", GOLD if full else MUTED, (x, y - 14), "midleft", tracking=4)
+    if full:
+        label(ui, f, f.mono12, "Q  W  E", GOLD, (x + KI_W, y - 14), "midright", tracking=2, alpha=int(150 + 105 * pulse))
+        g = pygame.transform.smoothscale(glow(app.art, 48, GOLD, 0.5 + 0.35 * pulse), (KI_W + 60, 34))
+        g.fill(GOLD, (30, 16, KI_W, 3), special_flags=pygame.BLEND_RGB_ADD)  # the bar itself, lit for the bloom
+        pos = g.get_rect(topleft=(x - 30, y - 15))
+        app.add.blit(g, pos, special_flags=pygame.BLEND_RGB_ADD)
+        if app.gpu is None:  # the CPU frame already holds the glow layer: add it straight on
+            app.frame.blit(g, pos, special_flags=pygame.BLEND_RGB_ADD)
+    thin_bar(ui, x, y, KI_W, ki.value / KI_MAX, GOLD, h=3)

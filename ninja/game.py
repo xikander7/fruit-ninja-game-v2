@@ -8,7 +8,8 @@ import pygame
 from .art import Art, Fonts, FRUITS, REGULAR, WEIGHTS, SPECIALS, _font
 from .audio import Audio
 from .entities import Body, Half, seg_hits_circle, rotate_vec
-from .hud import label, brush_x, draw_play_hud
+from .hud import label, brush_x, chevron, hairline_ring, draw_play_hud
+from .powers import KEYS as POWER_KEYS, KI_PER_COMBO, KiMeter, on_cut, tick_power, use_power
 from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade
 from .settings import W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
@@ -68,34 +69,6 @@ def blurred(surf, tint):
     return out
 
 
-_CHEVRONS = {}
-
-
-def chevron(step, color):
-    """A thin < or > (step -1 / 1), anti-aliased by drawing 4x and smoothscaling (aalines only antialias over an
-    opaque surface, and the UI layer is transparent)."""
-    key = (step, color)
-    if key not in _CHEVRONS:
-        k = 4
-        s = pygame.Surface((12 * k, 18 * k), pygame.SRCALPHA)
-        pts = [((6 - 3 * step) * k, 2 * k), ((6 + 4 * step) * k, 9 * k), ((6 - 3 * step) * k, 16 * k)]
-        pygame.draw.lines(s, (*color, 255), False, pts, k * 3 // 2)  # 1.5 px: the weight aalines read at
-        _CHEVRONS[key] = pygame.transform.smoothscale(s, (12, 18))
-    return _CHEVRONS[key]
-
-
-_RINGS = {}
-
-
-def hairline_ring(r):
-    """A 1 px anti-aliased gold circle (cached: one per radius)."""
-    if r not in _RINGS:
-        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
-        pygame.draw.aacircle(s, GOLD, (r + 2, r + 2), r, 1)
-        _RINGS[r] = s
-    return _RINGS[r]
-
-
 # ---------------- world: everything that lives on the dojo wall ----------------
 
 class World:
@@ -121,6 +94,7 @@ class World:
         self.shocks = []  # [x, y, age]
         self.t = 0.0
         self.gflip = 1.0  # gravity sign: -1 while a chaos fruit has turned the dojo upside down
+        self.power_scale = 1.0  # 0 while Time Stop holds the world still
         self.mote_t = 0.0
         self.ember_t = random.uniform(1.0, 3.0)
         for _ in range(40):  # the dojo already has dust hanging in the lamplight
@@ -179,7 +153,7 @@ class World:
         return u * u * (3 - 2 * u)
 
     def time_scale(self):
-        return 1.0 - 0.7 * self.slow_k()  # 0.3 at full slow-mo
+        return (1.0 - 0.7 * self.slow_k()) * self.power_scale  # 0.3 at full slow-mo
 
     def stamp(self, glyph, caption, x, y, size=120, color=WASHI, bonus=None, hold=False):
         self.stamps.append(Stamp(self.art, glyph, caption, x, y, size, color, bonus, hold))
@@ -584,6 +558,7 @@ class Play(Scene):
     def __init__(self, app, mode):
         self.app, self.mode = app, mode
         self.features = MODE_FEATURES[mode]
+        self.ki, self.power, self.last_power = KiMeter() if "powers" in self.features else None, None, "timestop"
         self.w = World(app)
         self.score = 0
         self.best_prev = app.save["best"][mode]
@@ -675,6 +650,7 @@ class Play(Scene):
                 w.popups.add("-10", b.x, b.y - 40, HANKO, True)
             return
         w.cut(b, *seg)
+        on_cut(self, b)  # Ki, and Dragon Fire's ignition
         mult = 2 if self.double > 0 else 1
         pts = b.ft.points * mult
         if self.mode == "arcade" and not b.special and random.random() < 0.06:
@@ -702,7 +678,7 @@ class Play(Scene):
             self.app.audio.play("power")
 
     def slice(self):
-        for seg in self.app.segments:
+        for seg in () if self.power and self.power.blocks_slicing else self.app.segments:
             for b in self.w.bodies:
                 if b.alive and seg_hits_circle(*seg, b.x, b.y, b.r * 1.05):
                     self.hit(b, seg)
@@ -713,6 +689,8 @@ class Play(Scene):
         if self.combo >= 3:
             bonus = self.combo * (2 if self.double > 0 else 1)
             self.add_score(bonus)
+            if self.ki:
+                self.ki.add(KI_PER_COMBO * self.combo)
             self.w.stamp("連", f"{self.combo} fruit combo", *self.combo_pos, 100 + min(60, self.combo * 6), bonus=f"+{bonus}")
             self.w.hitstop = max(self.w.hitstop, 0.05)
             self.app.audio.play("combo")
@@ -749,8 +727,14 @@ class Play(Scene):
             elif self.paused and e.key == pygame.K_q:
                 self.app.audio.fuse(False)
                 self.app.go(lambda: Menu(self.app))
+            elif e.key in POWER_KEYS:  # use_power refuses unless playing, unpaused and full
+                self.use_power(POWER_KEYS[e.key])
         elif e.type == pygame.MOUSEBUTTONDOWN and self.paused and e.button == 1:
             self.paused = False
+        elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
+            self.use_power(self.last_power)
+
+    use_power = use_power
 
     def focus_lost(self):
         if self.state == "play":
@@ -762,6 +746,8 @@ class Play(Scene):
         p = self.w.fx_params()
         if self.freeze > 0:  # the cold grade also drains a little colour on the GPU
             p["saturation"] *= 1 - 0.2 * min(1.0, self.freeze / 0.6)
+        if self.power:
+            self.power.fx(p)
         return p
 
     def update(self, dt):
@@ -770,8 +756,9 @@ class Play(Scene):
             return
         self.pause_bg = None
         w = self.w
-        # game clock: only freeze slows the timer, spawning and difficulty ramp; slow-mo only slows the world
-        wdt = dt * (0.4 if self.freeze > 0 else 1.0)
+        tick_power(self, dt)
+        # game clock: freeze slows (Time Stop stops) the timer, spawning and difficulty ramp; slow-mo only the world
+        wdt = dt * (0.4 if self.freeze > 0 else 1.0) * w.power_scale
         w.update(wdt * w.time_scale(), dt)
         # rolling counter: ease toward the real score (also downward after a bomb), snapping once close
         self.shown += (self.score - self.shown) * min(1.0, dt * 12)
@@ -832,7 +819,7 @@ class Play(Scene):
         w.bodies = [b for b in w.bodies if b.alive]
         # bomb fuses fizz
         bombs = [b for b in w.bodies if b.bomb]
-        for b in bombs:
+        for b in bombs if w.power_scale else ():
             tx, ty = rotate_vec(*self.app.art.bomb_tip, b.ang)
             w.particles.add(b.x + tx, b.y + ty, random.uniform(-90, 90), random.uniform(-160, -20), 0.25, 2, (255, 210, 120), "spark", 0.3)
             if random.random() < 0.5:
@@ -864,6 +851,8 @@ class Play(Scene):
                 img = pygame.transform.smoothscale_by(img, 1.5 - 0.5 * k)
             img.set_alpha(a)
             L.blit(img, img.get_rect(center=(x, H - 46)))
+        if self.power:
+            self.power.draw(L, add, self.app.ui)
 
     def draw_pause(self, screen):
         f = self.app.art.fonts
@@ -1199,7 +1188,7 @@ class App:
         self.draw_blade()
 
     def draw_blade(self):
-        colors = BLADES[self.save["blade"]][:3]
+        colors = getattr(getattr(self.scene, "power", None), "blade", None) or BLADES[self.save["blade"]][:3]
         xs = [p[0] for p in self.trail.pts if p] + [self.mouse[0]]
         ys = [p[1] for p in self.trail.pts if p] + [self.mouse[1]]
         box = pygame.Rect(min(xs) - 40, min(ys) - 40, max(xs) - min(xs) + 80, max(ys) - min(ys) + 80).clip(self.frame.get_rect())
