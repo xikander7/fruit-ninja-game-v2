@@ -17,7 +17,7 @@ SPLASH_GLINT = bytes(min(255, max(0, (v - 222) * 8)) for v in range(256))
 # tinted splashes are cached at the largest size the game ever shows one (watermelon: 2.2 * 56 * 1.2 * 1.25 / 300),
 # and the cache is capped: up to 14 colours x 4 sprites x 24 angles of full-size copies would be hundreds of MB
 SPLASH_SCALE = 0.62
-SPLASH_CACHE = 64  # measured: the same hit rate as 256 in a busy arcade run
+SPLASH_CACHE = 64  # about 8 MB; a miss (tint + rotate) costs about 0.35 ms, so a lower hit rate is cheap
 SS = 2  # supersample factor, smoothscaled down for anti-aliasing
 
 
