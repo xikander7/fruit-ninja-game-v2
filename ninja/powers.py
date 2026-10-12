@@ -35,6 +35,11 @@ class KiMeter:
         self.value = 0.0
 
 
+def cut_lod(w):
+    """The world's cut-effect LOD (1 at normal cut rates): power effects thin out with the juice in a cut storm."""
+    return min(1.0, w.HEAT_LOD / max(1.0, w.cut_heat))
+
+
 def on_screen(b):
     return b.alive and -b.r < b.x < W + b.r and -b.r < b.y < H
 
@@ -280,7 +285,7 @@ class ShadowClones(Power):
         ux, uy = c.vx / v, c.vy / v
         r = b.r * 1.5
         self.play.hit(b, (b.x - ux * r, b.y - uy * r, b.x + ux * r, b.y + uy * r))
-        self.play.w.particles.sparks(b.x, b.y, self.GHOST[2], 10, 420, 0.35)
+        self.play.w.particles.sparks(b.x, b.y, self.GHOST[2], round(10 * cut_lod(self.play.w)), 420, 0.35)
         c.target = None
 
     def draw(self, L, add, ui):
@@ -355,13 +360,14 @@ class DragonFire(Power):
 
     def burst(self, x, y, spread=True):
         w = self.play.w
+        lod = cut_lod(w)
         self.rings.append([x, y, 0.0])
-        w.particles.embers(x, y, 24, 480)
-        w.particles.sparks(x, y, (255, 170, 70), 16, 600, 0.4)
-        for _ in range(12):  # the fireball: soft flame blobs rolling outward and up
+        w.particles.embers(x, y, round(24 * lod * lod), 480)  # embers linger: thin them hardest
+        w.particles.sparks(x, y, (255, 170, 70), round(16 * lod), 600, 0.4)
+        for _ in range(max(1, round(12 * lod))):  # the fireball: soft flame blobs rolling outward and up
             a = random.uniform(0, math.tau)
             sp = random.uniform(60, 260)
-            w.particles.add(x, y, math.cos(a) * sp, math.sin(a) * sp - 60, random.uniform(0.3, 0.5), random.uniform(28, 50),
+            w.particles.add(x, y, math.cos(a) * sp, math.sin(a) * sp - 60, random.uniform(0.3, 0.5), random.uniform(28, 50) * (0.6 + 0.4 * lod),
                             random.choice(self.FLAME), "glow", -0.15)
         if not spread:
             return
@@ -378,19 +384,21 @@ class DragonFire(Power):
 
     def draw(self, L, add, ui):
         art = self.play.app.art
-        for x, y, left, r in self.pending:  # the cut fruit flares up before it bursts
+        licks = max(4, round(24 * cut_lod(self.play.w)))
+        for x, y, left, r in self.pending[-6:]:  # the cut fruit flares up before it bursts (in a firestorm, the newest)
             u = 1 - left / self.IGNITE_DELAY
             g = glow(art, r * (1.5 + 0.9 * u), (255, 120, 30), (0.5 + 0.5 * u) * random.uniform(0.85, 1.0))
             add.blit(g, g.get_rect(center=(x, y)), special_flags=pygame.BLEND_RGB_ADD)
-        for x, y, age in self.rings:
+        for n, (x, y, age) in enumerate(self.rings):
             u = age / self.RING
             e = 1 - (1 - u) ** 3
             rad = self.RADIUS * (0.2 + 0.8 * e)
             k = 1 - u * u
-            g = glow(art, rad * 0.9, (255, 110, 30), 0.45 * k)
-            add.blit(g, g.get_rect(center=(x, y)), special_flags=pygame.BLEND_RGB_ADD)
-            for i in range(24):  # the flame front: licks of fire riding the ring, flickering
-                a = i * math.tau / 24 + age * 2.5
+            if n >= len(self.rings) - 6:  # the big inner glow is the costly part: a firestorm only lights the newest
+                g = glow(art, rad * 0.9, (255, 110, 30), 0.45 * k)
+                add.blit(g, g.get_rect(center=(x, y)), special_flags=pygame.BLEND_RGB_ADD)
+            for i in range(licks):  # the flame front: licks of fire riding the ring, flickering
+                a = i * math.tau / licks + age * 2.5
                 rr = rad * random.uniform(0.93, 1.04)
                 f = glow(art, 14 + 20 * k, random.choice(self.FLAME), k * random.uniform(0.6, 1.0))
                 add.blit(f, f.get_rect(center=(x + math.cos(a) * rr, y + math.sin(a) * rr)), special_flags=pygame.BLEND_RGB_ADD)

@@ -72,6 +72,7 @@ def blurred(surf, tint):
 # ---------------- world: everything that lives on the dojo wall ----------------
 
 class World:
+    HEAT_TAU, HEAT_LOD, MAX_HALVES = 0.5, 6.0, 28  # cut-effect LOD: a storm of cuts gets lighter juice per cut
     PUNCH = 0.25  # s for a combo zoom punch to ease back
     SLOW_HOLD, SLOW_EASE = 0.4, 0.15  # slow-mo: held at full strength, then eased back to real time
     SHOCK = 0.6  # s for a bomb shockwave to cross the screen
@@ -95,6 +96,7 @@ class World:
         self.t = 0.0
         self.gflip = 1.0  # gravity sign: -1 while a chaos fruit has turned the dojo upside down
         self.power_scale = 1.0  # 0 while Time Stop holds the world still
+        self.cut_heat = 0.0  # ~ cuts in the last HEAT_TAU s (decays exponentially on real time)
         self.mote_t = 0.0
         self.ember_t = random.uniform(1.0, 3.0)
         for _ in range(40):  # the dojo already has dust hanging in the lamplight
@@ -117,9 +119,14 @@ class World:
             vx = (0 if b.static else b.vx * 0.6) + sx * 170 + dx * 60
             vy = (0 if b.static else b.vy * 0.6) + sy * 170 - 120
             self.halves.append(Half(fa, b.x + sx * b.r * 0.3, b.y + sy * b.r * 0.3, vx, vy, math.degrees(math.atan2(-sy, sx)), b))
-        self.particles.splash(b.x, b.y, b.ft.juice, nx, ny, b.r)  # first, so the droplets draw over it
-        self.particles.juice(b.x, b.y, b.ft.juice, nx, ny, spread=b.r * 1.1)  # the whole chord of the cut
-        self.stains.add(b.ft.juice, b.r, b.x, b.y)
+        del self.halves[:-self.MAX_HALVES]  # the oldest are falling away anyway
+        self.cut_heat += 1  # 1 at normal cut rates; powers and fruit rain can cut dozens a second
+        lod = min(1.0, self.HEAT_LOD / self.cut_heat)
+        if lod >= 1 or random.random() < lod:
+            self.particles.splash(b.x, b.y, b.ft.juice, nx, ny, b.r)  # first, so the droplets draw over it
+        self.particles.juice(b.x, b.y, b.ft.juice, nx, ny, spread=b.r * 1.1, lod=lod)  # the whole chord of the cut
+        if lod >= 0.5:
+            self.stains.add(b.ft.juice, b.r, b.x, b.y)
         self.slashes.append([b.x, b.y, dx, dy, b.r * 1.6, 0.0])
         self.app.audio.play("splat", 0.8)
 
@@ -164,6 +171,7 @@ class World:
         self.shake.update(real_dt)
         self.flash = max(0.0, self.flash - real_dt * 6.0)  # a sharp pop; a slow fade reads as fog
         self.slowmo = max(0.0, self.slowmo - real_dt)
+        self.cut_heat *= math.exp(-real_dt / self.HEAT_TAU)
         self.punch[1] += real_dt
         for s in self.shocks:
             s[2] += real_dt
@@ -777,8 +785,8 @@ class Play(Scene):
             self.state, self.state_t = "play", 0.0
         if self.state == "play":
             self.elapsed += wdt
-            self.freeze, self.frenzy, self.double = (max(0.0, v - dt) for v in (self.freeze, self.frenzy, self.double))
-            self.special_cd -= dt
+            self.freeze, self.frenzy, self.double = (max(0.0, v - dt * w.power_scale) for v in (self.freeze, self.frenzy, self.double))
+            self.special_cd -= dt * w.power_scale  # real time, but Time Stop holds it
             if self.time is not None:
                 self.time -= wdt
                 if 0 < self.time <= 5 and math.ceil(self.time) != self.last_tick:
@@ -799,7 +807,7 @@ class Play(Scene):
                 self.wave()
                 self.spawn_t = self.interval()
             if self.frenzy > 0:
-                self.frenzy_spawn -= dt
+                self.frenzy_spawn -= dt * w.power_scale
                 if self.frenzy_spawn <= 0:
                     self.frenzy_spawn = 0.09
                     side = random.choice((-1, 1))

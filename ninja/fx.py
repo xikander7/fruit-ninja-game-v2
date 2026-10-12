@@ -119,19 +119,21 @@ class Particles:
         if p:
             p.c2 = tint(color, 0.55)  # wet highlight along the droplet
 
-    def juice(self, x, y, color, nx, ny, n=35, spread=30):
+    def juice(self, x, y, color, nx, ny, n=35, spread=30, lod=1.0):
         """Juice leaves the whole cut face, flung mostly along the normal: heavy round drops, many fine ones,
-        a brief translucent sheet along the cut and a wet emissive mist."""
+        a brief translucent sheet along the cut and a wet emissive mist. `lod` < 1 thins every count (cut storms)."""
+        n = round(n * lod)
         ux, uy = ny, -nx  # along the cut
-        for side in (1, -1):  # the sheet of juice torn off the cut face; gone in ~0.15 s
+        for side in (1, -1) if lod >= 0.5 else ():  # the sheet of juice torn off the cut face; gone in ~0.15 s
             p = self.add(x, y, 0, 0, 0.15, spread * 2.2, color, "sheet", 0.0)
             if p:
                 p.shape = (ux, uy, nx * side, ny * side)
         if self.art.splashes:  # the splash photo carries the bulk of the liquid: thinner fine spray around it
             n //= 2
-        for i in range(n + 5):
+        heavy = max(1, round(5 * lod))
+        for i in range(n + heavy):
             side = random.choice((-1, 1))
-            big = i < 5  # a few heavy drops; the rest is fine spray
+            big = i < heavy  # a few heavy drops; the rest is fine spray
             # thrown off both sides of the cut face: clustered on the normal, wide speed spread so no ring front forms
             sp = (430 if big else 560) * random.uniform(0.35, 1.0)
             a = math.atan2(ny * side, nx * side) + random.gauss(0, 0.3 if big else 0.42)
@@ -142,7 +144,7 @@ class Particles:
                       random.uniform(2.8, 4.6) if big else random.uniform(1.3, 2.4), shade(color, random.uniform(0.72, 1.05)))
         for side in (1, -1):  # a tight jet of fine droplets off each side, random in speed, angle and release
             a0 = math.atan2(ny * side, nx * side)
-            for _ in range(8):
+            for _ in range(max(1, round(8 * lod))):
                 sp = 640 * random.uniform(0.35, 1.0)
                 a = a0 + random.gauss(0, 0.22)
                 o = random.gauss(0, 0.5) * spread
@@ -150,7 +152,7 @@ class Particles:
                 lead = random.uniform(0.0, 0.04)
                 self.drop(x + ux * o + vx * lead, y + uy * o + vy * lead, vx, vy, random.uniform(0.4, 0.7),
                           random.uniform(1.3, 2.1), color)
-        for _ in range(10):  # mist on the emissive layer: the bloom turns it into a wet glow
+        for _ in range(max(2, round(10 * lod))):  # mist on the emissive layer: the bloom turns it into a wet glow
             a = random.uniform(0, math.tau)
             sp = random.uniform(90, 220)
             self.add(x + ux * random.uniform(-1, 1) * spread, y + uy * random.uniform(-1, 1) * spread,

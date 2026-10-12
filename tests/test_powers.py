@@ -57,11 +57,14 @@ class Powers(unittest.TestCase):
         run(app, 1, [key(pygame.K_q)])
         self.assertEqual(p.power.name, "timestop")
         self.assertEqual(p.w.time_scale(), 0.0)
-        for x in range(300, 901, 25):
+        for x in range(900, 299, -25):  # right to left: b is touched first
             move(app, (x, 360))
         self.assertTrue(a.alive and b.alive)   # nothing cut while time is stopped
+        order, hit = [], p.hit
+        p.hit = lambda body, seg: (order.append(body), hit(body, seg))
         run(app, int(3.2 / DT) + 10)
         self.assertFalse(a.alive); self.assertFalse(b.alive); self.assertTrue(c.alive)
+        self.assertEqual(order, [b, a])
         self.assertIsNone(p.power)
 
     def test_timestop_empty_path_ends_cleanly(self):
@@ -137,3 +140,82 @@ class Powers(unittest.TestCase):
         self.assertTrue(p.use_power("clones"))
         p.hit(p.w.throw("apple", 400, 500, 0, 0, static=True), (300, 500, 500, 500))
         self.assertEqual(p.ki.value, 0)
+
+    # --- exits and pauses mid-power ---
+    def test_run_ending_mid_power_ends_it_and_restores_time(self):
+        p = self.p
+        p.ki.value = KI_MAX
+        self.assertTrue(p.use_power("timestop"))
+        run(self.app, 5)
+        p.state = "dying"
+        run(self.app, 1)
+        self.assertIsNone(p.power); self.assertFalse(p.ki.locked); self.assertEqual(p.w.time_scale(), 1.0)
+
+    def test_pause_mid_power_keeps_it_and_resumes(self):
+        p = self.p
+        p.ki.value = KI_MAX
+        self.assertTrue(p.use_power("clones"))
+        run(self.app, 10)
+        pw, t = p.power, p.power.t
+        p.paused = True
+        run(self.app, 60)
+        self.assertIs(p.power, pw); self.assertEqual(pw.t, t); self.assertTrue(p.ki.locked)
+        p.paused = False
+        run(self.app, 5)
+        self.assertIs(p.power, pw); self.assertGreater(pw.t, t)
+
+    def test_timestop_holds_frenzy_and_power_up_timers(self):
+        app = self.app
+        app.go(lambda: game.Play(app, "arcade"))
+        p = app.scene
+        run(app, 80)
+        p.queue.clear(); p.spawn_t = 99
+        p.frenzy, p.double = 4.5, 8.0
+        p.ki.value = KI_MAX
+        self.assertTrue(p.use_power("timestop"))
+        run(app, 2)
+        n, frenzy, double = len(p.w.bodies), p.frenzy, p.double
+        run(app, int(2.8 / DT))
+        self.assertEqual(p.power.name, "timestop")
+        self.assertEqual(len(p.w.bodies), n); self.assertEqual(p.frenzy, frenzy); self.assertEqual(p.double, double)
+
+
+class CutLod(unittest.TestCase):
+    """A storm of cuts thins the juice per cut; a single cut looks exactly as before."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        game.SAVE_PATH = Path(self.tmp.name) / "save.json"
+        self.app = game.App()
+
+    def tearDown(self):
+        pygame.quit(); self.tmp.cleanup()
+
+    def cut_cost(self, w):
+        b = w.throw("apple", 640, 360, 0, 0, static=True)
+        n = len(w.particles.items)
+        w.cut(b, 600, 360, 680, 360)
+        return len(w.particles.items) - n
+
+    def test_single_cut_unchanged_rapid_cuts_lighter(self):
+        from ninja.fx import Particles
+        w = game.World(self.app)
+        w.particles.items.clear()
+        ref = Particles(self.app.art)
+        if self.app.art.splashes:
+            ref.splash(640, 360, (1, 1, 1), 0, 1, 40)
+        ref.juice(640, 360, (1, 1, 1), 0, 1, spread=44)
+        self.assertEqual(self.cut_cost(w), len(ref.items))
+        for _ in range(20):
+            w.particles.items.clear()
+            last = self.cut_cost(w)
+        self.assertLess(last, len(ref.items) * 0.6)
+        for _ in range(240):  # heat decays on real time: back to full juice
+            w.update(DT, DT)
+        w.particles.items.clear()
+        self.assertEqual(self.cut_cost(w), len(ref.items))
+
+    def test_halves_capped(self):
+        w = game.World(self.app)
+        for _ in range(40):
+            self.cut_cost(w)
+        self.assertLessEqual(len(w.halves), game.World.MAX_HALVES)
