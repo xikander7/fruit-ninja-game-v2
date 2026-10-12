@@ -16,9 +16,22 @@ bottom: it explains the language, the libraries, where every file lives and what
 
 ## Play it
 
-- **In your browser:** <https://xikander7.github.io/fruit-ninja-game-v2/> (works best in Chrome, Edge or Firefox on a computer; click once to start)
+- **In your browser:** <https://xikander7.github.io/fruit-ninja-game-v2/> (computers and phones: on a phone, tap once and turn it sideways; the game fills the screen)
 - **On Windows:** download `FruitNinjaNightDojo-windows.zip` from the [v4.0 release](https://github.com/xikander7/fruit-ninja-game-v2/releases/tag/v4.0), unzip it and double-click
   `FruitNinjaNightDojo.exe`. You don't need to install Python.
+
+### The web edition (`web/`)
+
+The browser version is written in JavaScript (no libraries, no build step) and draws with Canvas2D; the sounds play
+through the Web Audio API. It is a port of the Python game with the same numbers. The old Python-in-the-browser build
+(`tools/build_web.py`, pygbag) is retired: it was too slow on phones, could not fill the window, and its audio crackled.
+
+```
+python tools/build_web_js.py                 # converts the sounds and copies the art into web/assets/
+python -m http.server 8000 -d web            # then open http://localhost:8000
+node --test "web/tests/*.test.mjs"           # the rules tests
+python tools/deploy_web.py --push            # publish to GitHub Pages
+```
 
 ## Quick start (from the source code)
 
