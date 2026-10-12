@@ -21,14 +21,14 @@ MIN_GAP = 0.120       # s of silence that separates two hits
 MIN_HIT = 0.060       # s; shorter fragments are dropped
 FADE = 0.005          # s
 PEAK_DB = -1.0
-WHOLE = ("fuse", "music")  # looped files: keep whole, no splitting
+WHOLE = ("fuse", "music", "fever")  # looped files: keep whole, no splitting
 WIN = int(0.005 * SR)      # 5 ms envelope window
 # The generated files sometimes hold long ambient runs or tiny clicks; keep each hit game-sized.
 # name prefix -> (min seconds, max seconds); over-long hits get a 150 ms fade-out at the cap.
 LIMITS = {"explode": (0.06, 4.0), "gong": (0.06, 6.0), "slash": (0.15, 1.2), "splat": (0.15, 1.0), "ui": (0.06, 1.0), "miss": (0.15, 2.0)}
 MIN_RMS_DB = -32.0         # after normalising: a near-silent hit with one spike is a click, drop it
 CAP_FADE = 0.150
-LOOP_XFADE = {"fuse": 0.5, "music": 1.0}  # s
+LOOP_XFADE = {"fuse": 0.5, "music": 1.0, "fever": 1.0}  # s
 
 
 def decode(path):
@@ -130,6 +130,7 @@ def main():
     print(f"{'file':16}{'src s':>7}{'hits':>5}{'dur s':>8}{'peak dB':>9}{'rms dB':>8}")
     for name, paths in manifest.items():
         n = 0
+        stem = name.replace("_", "")  # audio.py parses <letters><digits>_<n>.wav, so boss_hit -> bosshit_1.wav
         for p in paths:
             a = decode(os.path.join(ROOT, p))
             if name in WHOLE:
@@ -139,9 +140,9 @@ def main():
                 parts = [x for x in parts if x is not None]
             for part in parts:
                 n += 1
-                write_wav(os.path.join(out, f"{name}_{n}.wav"), part)
+                write_wav(os.path.join(out, f"{stem}_{n}.wav"), part)
                 d, pk, rms = stats(part)
-                print(f"{name + '_' + str(n):16}{len(a) / SR:7.2f}{len(parts):5d}{d:8.2f}{pk:9.1f}{rms:8.1f}")
+                print(f"{stem + '_' + str(n):16}{len(a) / SR:7.2f}{len(parts):5d}{d:8.2f}{pk:9.1f}{rms:8.1f}")
     return 0
 
 

@@ -147,3 +147,42 @@ class SplashCutTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NewAssets(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def setUp(self):
+        self.art = Art()
+
+    def test_new_fruit_types_exist_but_are_not_regular(self):
+        for k in ("golden", "chaos"):
+            self.assertIn(k, art.FRUITS)
+            self.assertNotIn(k, art.REGULAR)
+            fa = self.art.fruits[k]
+            self.assertTrue(fa.whole.get_flags() & pygame.SRCALPHA)
+            self.assertEqual(fa.half_local, 270)
+
+    def test_boss_and_hazard_sprites(self):
+        for k in ("durian", "pineapple"):
+            img = self.art.boss[k]
+            self.assertAlmostEqual(max(img.get_size()), 2.35 * 120, delta=4)
+        self.assertLessEqual(max(self.art.shuriken.get_size()), 80)
+        self.assertTrue(self.art.icebomb.get_flags() & pygame.SRCALPHA)
+        self.assertTrue(self.art.icebomb_shadow.get_flags() & pygame.SRCALPHA)
+
+    def test_fallbacks_without_sprite_dir(self):
+        old = art.SPRITE_DIR
+        art.SPRITE_DIR = tempfile.mkdtemp()
+        try:
+            a = Art()
+            self.assertIn("durian", a.boss)
+            self.assertIn("pineapple", a.boss)
+            self.assertIsNotNone(a.shuriken)
+            self.assertIsNotNone(a.icebomb)
+            self.assertIsNotNone(a.icebomb_shadow)
+        finally:
+            art.SPRITE_DIR = old

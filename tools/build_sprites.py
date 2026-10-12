@@ -20,6 +20,9 @@ RAW = os.path.join(ROOT, "assets", "raw")
 OUT = os.path.join(ROOT, "assets", "sprites")
 FILL = 2.35  # longer side of a whole sprite = FILL * r
 BOMB_R = 38
+BOSS_R = 120
+SHURIKEN_SIZE = 64
+EXTRA = {"durian": BOSS_R, "pineapple": BOSS_R, "icebomb": BOMB_R}  # extra whole-only sprites: name -> radius
 SPLASH_SIZE = 300  # longer side of a splash sprite; the game scales it to the fruit
 SPLASH_CROP = {"drops1": 0.72}  # keep the top fraction: drops1's bottom edge is a cut-off pool
 # luma -> alpha: the black studio background keys out, the milk body is fully opaque
@@ -100,9 +103,9 @@ def main():
     def src(name):
         return os.path.join(ROOT, manifest[name])
 
-    names = list(FRUITS) + ["bomb"]
+    names = list(FRUITS) + ["bomb", *EXTRA]
     for name in names:
-        r = BOMB_R if name == "bomb" else FRUITS[name].r
+        r = BOMB_R if name == "bomb" else EXTRA.get(name) or FRUITS[name].r
         whole = load_trimmed(src(name))
         k = FILL * r / max(whole.get_size())
         whole = scale_by(whole, k)
@@ -112,8 +115,14 @@ def main():
         print(f"{name}.png", whole.get_size())
         if name + "_half" in manifest:
             half = scale_by(load_trimmed(src(name + "_half")), k)  # same factor as its whole
+            if name == "golden":  # the generated golden half came out as a plain pale apple: same grade as "double"
+                gold_grade(half)
             pygame.image.save(half, os.path.join(OUT, name + "_half.png"))
             print(f"{name}_half.png", half.get_size())
+    star = load_trimmed(src("shuriken"))
+    star = scale_by(star, SHURIKEN_SIZE / max(star.get_size()))
+    pygame.image.save(star, os.path.join(OUT, "shuriken.png"))
+    print("shuriken.png", star.get_size())
     build_background(src("background"))
     for key in manifest:
         if key.startswith("splash_"):

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pygame
 
-from .settings import W, H, WASHI, HANKO, LACQUER, CEDAR
+from .settings import W, H, WASHI, HANKO, LACQUER, CEDAR, STEEL
 
 SPRITE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "sprites")
 # juice splash photos (tools/build_sprites.py) and the direction each one flings its liquid, in degrees counter-
@@ -50,6 +50,9 @@ FRUITS = {
     "freeze": FruitType("freeze", 44, (150, 215, 255), (40, 80, 140), (230, 245, 255), (220, 240, 255), (160, 220, 255), 1, "banana", "freeze"),
     "frenzy": FruitType("frenzy", 44, (255, 110, 50), (140, 30, 10), (255, 220, 180), (255, 200, 150), (255, 120, 50), 1, "banana", "frenzy"),
     "double": FruitType("double", 44, (255, 205, 50), (150, 100, 0), (255, 245, 200), (255, 238, 170), (255, 210, 60), 1, "banana", "double"),
+    # only ever spawned by hazards (golden rain, chaos), never by the normal waves
+    "golden": FruitType("golden", 40, (255, 200, 40), (180, 120, 10), (255, 240, 180), (255, 225, 120), (255, 210, 60), 5, "round", ""),
+    "chaos": FruitType("chaos", 36, (120, 40, 200), (40, 220, 200), (230, 200, 255), (200, 140, 255), (170, 90, 255), 1, "round", ""),
 }
 REGULAR = ["watermelon", "coconut", "orange", "peach", "apple", "lemon", "kiwi", "plum", "strawberry", "banana", "dragonfruit"]
 WEIGHTS = [10, 6, 12, 9, 12, 9, 9, 8, 9, 6, 3]
@@ -669,12 +672,49 @@ def make_edge_glow(color, peak, reach=0.42):
     return pygame.transform.smoothscale(s, (W, H))
 
 
+BOSS_R = 120
+SHURIKEN_SIZE = 64
+BOSS_FALLBACK = {"durian": ("coconut", 2.7, (110, 140, 60)), "pineapple": ("orange", 2.9, (230, 190, 60))}
+
+
+def tinted(img, k, color):
+    """A scaled, multiply-tinted copy (alpha kept)."""
+    w, h = img.get_size()
+    out = pygame.transform.smoothscale(img, (max(1, round(w * k)), max(1, round(h * k))))
+    out.fill((*color, 255), special_flags=pygame.BLEND_RGB_MULT)
+    return out
+
+
+def make_shuriken(size=SHURIKEN_SIZE):
+    s = pygame.Surface((size * SS, size * SS), pygame.SRCALPHA)
+    c, R = size * SS / 2, size * SS / 2 - SS * 2
+    pts = []
+    for i in range(8):  # 4-point star: long tips, short inner corners
+        a = math.pi / 4 * i - math.pi / 2
+        rad = R if i % 2 == 0 else R * 0.32
+        pts.append((c + math.cos(a) * rad, c + math.sin(a) * rad))
+    pygame.draw.polygon(s, STEEL, pts)
+    pygame.draw.polygon(s, (40, 46, 58), pts, SS * 2)
+    pygame.draw.circle(s, (40, 46, 58), (c, c), R * 0.14)
+    return _down(s)
+
+
 class Art:
     def __init__(self):
         self.fonts = Fonts()
         self.fruits = {k: FruitArt(ft) for k, ft in FRUITS.items()}
         self.bomb, self.bomb_tip, self.bomb_shadow = load_bomb() or make_bomb()
         self.bg = load_background() or make_background()
+        self.boss = {}
+        for name, (src, k, col) in BOSS_FALLBACK.items():
+            self.boss[name] = load_sprite(name) or tinted(self.fruits[src].whole, k, col)
+        self.shuriken = load_sprite("shuriken") or make_shuriken()
+        ice = load_sprite("icebomb")
+        if ice is not None:
+            self.icebomb, self.icebomb_shadow = ice, make_shadow(ice)
+        else:
+            self.icebomb = tinted(self.bomb, 1.0, (170, 220, 255))
+            self.icebomb_shadow = make_shadow(self.icebomb)
         self.frost = make_edge_glow((190, 222, 255), 42, 0.28)  # freeze: cold breath at the edges
         self.ember = make_edge_glow((255, 120, 36), 110, 0.2)  # frenzy: warm glow at the edges
         self._seals = {}

@@ -170,12 +170,16 @@ def music(rng):
 AUDIO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "audio")
 # file prefix -> game sound name (ui clicks double as the quiet "throw" whoosh)
 GROUPS = {"slash": "swoosh", "splat": "splat", "explode": "explode", "fuse": "fuse", "combo": "combo",
-          "power": "power", "gong": "gong", "ui": "throw", "miss": "miss", "music": "music"}
+          "power": "power", "gong": "gong", "ui": "throw", "miss": "miss", "music": "music",
+          "timestop": "timestop", "clones": "clones", "dragonfire": "dragonfire", "bosshit": "boss_hit",
+          "bossroar": "boss_roar", "fever": "fever", "shuriken": "shuriken"}
 ALIASES = {"stamp": "combo", "life": "power"}  # names that reuse another group's files
 # Per-name level. Files are peak-normalised to -1 dBFS with RMS between about -14 and -25 dBFS,
 # so these bring them into balance; music sits well under the effects.
 LEVEL = {"swoosh": 0.9, "splat": 0.9, "throw": 0.35, "explode": 0.8, "fuse": 0.45, "miss": 0.75,
-         "combo": 0.7, "power": 0.7, "stamp": 0.6, "life": 0.55, "gong": 0.75, "music": 0.4}
+         "combo": 0.7, "power": 0.7, "stamp": 0.6, "life": 0.55, "gong": 0.75, "music": 0.4,
+         "timestop": 0.7, "clones": 0.7, "dragonfire": 0.7, "boss_hit": 0.8, "boss_roar": 0.8, "fever": 0.45,
+         "shuriken": 0.7}
 
 
 def _load_files(folder):
@@ -237,6 +241,11 @@ class Audio:
         for name, build in fallback.items():
             if name not in self.s:
                 self.s[name] = build()
+        # new sounds with no files reuse an existing group's sounds (fever stays a quiet one-shot rather than a loop)
+        for name, src in (("timestop", "power"), ("clones", "power"), ("dragonfire", "power"), ("fever", "power"),
+                          ("boss_hit", "splat"), ("boss_roar", "gong"), ("shuriken", "swoosh")):
+            if name not in self.s:
+                self.s[name] = self.s[src]
         self.music_snd = random.choice(self.s["music"])  # one loop per session
         self.ok = True
 

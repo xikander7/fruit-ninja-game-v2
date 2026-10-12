@@ -45,6 +45,21 @@ class AudioTests(unittest.TestCase):
         self.assertGreater(len(a.s["swoosh"]), 4)
         self.assertIn(a.music_snd, a.s["music"])
 
+    def test_new_sounds_resolve(self):
+        a = audio.Audio()
+        if not a.ok:
+            self.skipTest("no audio device")
+        for name in ("timestop", "clones", "dragonfire", "boss_hit", "boss_roar", "fever", "shuriken"):
+            self.assertTrue(a.s.get(name), name)
+
+    def test_new_sound_fallbacks_with_empty_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            a = audio.Audio(d)
+            if not a.ok:
+                self.skipTest("no audio device")
+            for name in ("timestop", "clones", "dragonfire", "boss_hit", "boss_roar", "fever", "shuriken"):
+                self.assertTrue(a.s.get(name), name)
+
     def test_built_assets_present(self):
         wavs = os.listdir(os.path.join(ROOT, "assets", "audio"))
         for prefix in audio.GROUPS:
