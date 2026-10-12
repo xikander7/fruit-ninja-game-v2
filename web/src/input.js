@@ -6,8 +6,17 @@ const GAME_KEYS = new Set([" ", "arrowleft", "arrowright", "arrowup", "arrowdown
 
 export function attachInput(app, canvas) {
   const toStage = (e) => {
-    const r = canvas.getBoundingClientRect();
-    return [((e.clientX - r.left) / r.width) * VIEW.w - VIEW.ox, ((e.clientY - r.top) / r.height) * VIEW.h - VIEW.oy];
+    const [dw, dh] = app.disp;
+    let lx, ly; // the point in the canvas's own (unturned) pixels, from its centre
+    if (app.turned) { // the canvas is turned 90 degrees clockwise: undo it
+      lx = e.clientY - window.innerHeight / 2;
+      ly = -(e.clientX - window.innerWidth / 2);
+    } else {
+      const r = canvas.getBoundingClientRect();
+      lx = e.clientX - (r.left + r.width / 2);
+      ly = e.clientY - (r.top + r.height / 2);
+    }
+    return [((lx + dw / 2) / dw) * VIEW.w - VIEW.ox, ((ly + dh / 2) / dh) * VIEW.h - VIEW.oy];
   };
   const push = (ev) => { if (app.events.length < 400) app.events.push(ev); };
   const isTouch = (e) => e.pointerType === "touch" || e.pointerType === "pen";

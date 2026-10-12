@@ -67,8 +67,11 @@ export class App {
   /** Fit the view to the window: the stage plus extra wall for the window's shape, so the picture always fills it. */
   resize() {
     const vv = window.visualViewport;
-    const cw = Math.max(320, Math.floor(vv ? vv.width : window.innerWidth));
-    const ch = Math.max(200, Math.floor(vv ? vv.height : window.innerHeight));
+    let cw = Math.max(200, Math.floor(vv ? vv.width : window.innerWidth));
+    let ch = Math.max(200, Math.floor(vv ? vv.height : window.innerHeight));
+    // a phone held upright: draw the game turned a quarter, filling the long side, so no one has to rotate (or unlock) the phone
+    this.turned = this.touch && ch > cw;
+    if (this.turned) [cw, ch] = [ch, cw];
     const aspect = cw / ch;
     let vw = W, vh = H;
     if (aspect >= W / H) vw = Math.min(Math.round(H * aspect), Math.round(H * 2.4)); // wider than 16:9: more wall at the sides
@@ -84,6 +87,8 @@ export class App {
     const px = Math.round(vw * RS), py = Math.round(vh * RS);
     this.canvas.width = px; this.canvas.height = py;
     this.canvas.style.width = `${dw}px`; this.canvas.style.height = `${dh}px`;
+    this.canvas.classList.toggle("turned", this.turned);
+    this.disp = [dw, dh];
     const layer = (w, h) => { const c = makeCanvas(w, h); return [c, getCtx(c)]; };
     [this.Lc, this.L] = layer(vw, vh);
     [this.addc, this.add] = layer(vw, vh);

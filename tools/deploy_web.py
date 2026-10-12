@@ -7,13 +7,23 @@ The site is a plain folder of static files: web/index.html, web/src, favicon and
 a server. `--push` force-replaces gh-pages (it only ever holds a built site, never source), so it asks git for the
 origin URL of this repo and pushes a fresh one-commit history there.
 """
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "build" / "site"
+
+
+def rmtree(path):
+    """Delete a folder, including git's read-only object files (Windows refuses them otherwise)."""
+    def unlock(func, p, _exc):
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    shutil.rmtree(path, onexc=unlock)
 
 
 def run(*cmd, cwd=ROOT):
@@ -23,7 +33,7 @@ def run(*cmd, cwd=ROOT):
 def build_site():
     subprocess.run([sys.executable, str(ROOT / "tools" / "build_web_js.py")], check=True, cwd=ROOT)
     if SITE.exists():
-        shutil.rmtree(SITE)
+        rmtree(SITE)
     SITE.mkdir(parents=True)
     web = ROOT / "web"
     for name in ("index.html", "favicon.png"):
@@ -37,11 +47,12 @@ def build_site():
 
 def push():
     url = run("git", "remote", "get-url", "origin")
+    who = ("-c", f"user.name={run('git', 'config', 'user.name')}", "-c", f"user.email={run('git', 'config', 'user.email')}")
     for cmd in (("git", "init", "-q", "-b", "gh-pages"), ("git", "add", "-A"),
-                ("git", "commit", "-q", "-m", "Publish the web edition"),
+                ("git", *who, "commit", "-q", "-m", "Publish the web edition"),
                 ("git", "push", "--force", url, "gh-pages")):
         run(*cmd, cwd=SITE)
-    shutil.rmtree(SITE / ".git", ignore_errors=True)
+    rmtree(SITE / ".git")
     print("pushed to gh-pages")
 
 
