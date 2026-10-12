@@ -1,0 +1,5 @@
+# Tools for building assets and the shareable editions. The game itself only needs requirements.txt.
+-r requirements.txt
+numpy
+pyinstaller
+pygbag
