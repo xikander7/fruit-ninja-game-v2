@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fruit Ninja Ultimate</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- 1. STARTUP SCREEN -->
+    <div id="startup-screen" class="screen">
+        <h1 class="game-title">🍉 FRUIT NINJA 🥷</h1>
+        <p class="subtitle">Slice with Precision!</p>
+        <button id="start-btn" class="arcade-btn">PRESS TO START</button>
+    </div>
+
+    <!-- 2. MAIN MENU SCREEN -->
+    <div id="menu-screen" class="screen hidden">
+        <h1 class="menu-title">SELECT GAME MODE</h1>
+        <div class="mode-buttons">
+            <button class="mode-btn" data-mode="classic">Classic Mode <br><span>(3 Lives, Normal Speed)</span></button>
+            <button class="mode-btn" data-mode="arcade">Arcade Mode <br><span>(60 Seconds, Frenzy)</span></button>
+            <button class="mode-btn" data-mode="zen">Zen Mode <br><span>(Relaxed, No Bombs)</span></button>
+        </div>
+    </div>
+
+    <!-- 3. GAMEPLAY SCREEN -->
+    <div id="game-screen" class="screen hidden">
+        <div id="hud">
+            <div id="score-box">Score: <span id="score">0</span></div>
+            <div id="level-box">Level: <span id="level">1</span></div>
+            <div id="lives-box">Lives: <span id="lives">❤️❤️❤️</span></div>
+        </div>
+        <canvas id="gameCanvas" width="900" height="550"></canvas>
+    </div>
+
+    <!-- 4. GAME OVER & SCOREBOARD SCREEN -->
+    <div id="gameover-screen" class="screen hidden">
+        <h1 class="gameover-title">GAME OVER</h1>
+        <div class="scoreboard-card">
+            <h2>Final Score: <span id="final-score">0</span></h2>
+            <p>Highest Level Reached: <span id="final-level">1</span></p>
+            <h3>🏆 High Scores</h3>
+            <ul id="high-score-list">
+                <li>No scores yet</li>
+            </ul>
+        </div>
+        <button id="restart-btn" class="arcade-btn">PLAY AGAIN</button>
+        <button id="menu-back-btn" class="small-btn">Main Menu</button>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
