@@ -195,6 +195,20 @@ export function brushX(size, color, outline = false) {
 
 // ---------------- hanko seals, ink blots ----------------
 
+/** Layout for the one-to-four-character English labels cut out of a red seal. */
+export function latinSealLayout(label, size) {
+  if (typeof label !== "string" || !/^[A-Z0-9]{1,4}$/.test(label)) return null;
+  const scale = [0, 0.58, 0.46, 0.34, 0.26][label.length];
+  const px = Math.round(size * scale);
+  return {
+    text: label, px,
+    font: `700 ${px}px BarlowCondensed, 'Arial Narrow', 'Segoe UI', sans-serif`,
+    maxWidth: size * 0.78,
+    x: size / 2,
+    y: size * 0.52,
+  };
+}
+
 // Draws a hanko (a Japanese stamp seal): a red square with a slightly wobbly edge, the kanji cut out,
 // then noise and wear so it looks pressed in ink. A seeded random generator (rng) makes the same glyph look the same each time.
 export function makeSeal(art, glyph, size) {
@@ -216,6 +230,16 @@ export function makeSeal(art, glyph, size) {
     const px = Math.trunc(size * 0.6);
     g.globalCompositeOperation = "destination-out";
     g.drawImage(gl, size / 2 - px / 2, size / 2 + size * 0.02 - px / 2, px, px);
+  } else {
+    const text = latinSealLayout(glyph, size);
+    if (text) {
+      g.globalCompositeOperation = "destination-out";
+      g.font = text.font;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillStyle = "#000";
+      g.fillText(text.text, text.x, text.y, text.maxWidth);
+    }
   }
   g.globalCompositeOperation = "destination-in"; // uneven ink: a coarse noise field multiplied into alpha
   const n = Math.max(4, size >> 3);

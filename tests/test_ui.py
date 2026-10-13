@@ -52,7 +52,7 @@ class Scenes(unittest.TestCase):
     # Proves: a brand-new player can select every blade without earning a high score first.
     def test_all_blades_are_available_to_a_new_player(self):
         menu = game.Menu(self.app)
-        self.assertEqual(menu.unlocked(), ["Moonlight", "Sakura", "Ember", "Gold Leaf"])
+        self.assertEqual(menu.unlocked(), ["Moonlight", "Petal Fan", "Ember", "Gold Leaf"])
 
     # Proves: the classic game draws, and a dropped fruit adds a strike.
     def test_play_classic_renders(self):
@@ -266,6 +266,18 @@ class FontsTest(unittest.TestCase):
     def tearDown(self):
         """Shut pygame down."""
         pygame.quit()
+
+    # Proves: one-to-four-letter English seal labels are rendered inside the stamp's safe area.
+    def test_english_seal_labels_are_cut_out_and_fit(self):
+        self.assertTrue(hasattr(art, "latin_seal_text"))
+        fonts = art.Fonts()
+        for text in ("H", "GO", "TRY", "MENU"):
+            glyph = art.latin_seal_text(fonts, text, 100)
+            self.assertLessEqual(glyph.get_width(), 78)
+            self.assertLessEqual(glyph.get_height(), 70)
+            self.assertGreater(glyph.get_bounding_rect().width, 0)
+            seal = art.make_seal(fonts, text, 100)
+            self.assertGreater(pygame.mask.from_surface(seal).count(), 0)
 
     # Proves: letter spacing makes text wider by exactly the spacing added, and results are cached.
     def test_tracking_widens_text(self):

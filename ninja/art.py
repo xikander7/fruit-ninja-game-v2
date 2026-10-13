@@ -2,6 +2,7 @@
 import math
 import os
 import random
+import re
 from dataclasses import dataclass
 
 import pygame
@@ -640,6 +641,21 @@ def kanji(fonts, glyph, px):
     return pygame.font.SysFont(fonts.kanji, px, bold=True).render(glyph, True, (0, 0, 0))
 
 
+def latin_seal_text(fonts, text, size):
+    """Render a short Latin label sized to fit safely inside a square seal."""
+    if not isinstance(text, str) or not re.fullmatch(r"[A-Z0-9]{1,4}", text):
+        return None
+    px = round(size * (0.58, 0.46, 0.34, 0.26)[len(text) - 1])
+    limit_w, limit_h = size * 0.78, size * 0.70
+    while px >= 8:
+        font = _font(fonts.NUM[0], px, fonts.NUM[1], True)
+        rendered = font.render(text, True, (255, 255, 255))
+        if rendered.get_width() <= limit_w and rendered.get_height() <= limit_h:
+            return rendered
+        px -= 1
+    return rendered
+
+
 def make_seal(fonts, glyph, size, rng=None):
     """A hanko impression, ink only: a red square with the glyph left uncut (白文), worn at the edges the way a
     real stone seal prints. The game's signature mark."""
@@ -655,7 +671,7 @@ def make_seal(fonts, glyph, size, rng=None):
             j = size * 0.012
             pts.append((a[0] + (b[0] - a[0]) * t + rng.uniform(-j, j), a[1] + (b[1] - a[1]) * t + rng.uniform(-j, j)))
     pygame.draw.polygon(s, (*HANKO, 255), pts)
-    g = kanji(fonts, glyph, int(size * 0.6))  # alpha-only stencil: subtracting it cuts the glyph out of the ink
+    g = latin_seal_text(fonts, glyph, size) or kanji(fonts, glyph, int(size * 0.6))
     s.blit(g, g.get_rect(center=(size / 2, size / 2 + size * 0.02)), special_flags=pygame.BLEND_RGBA_SUB)
     # uneven ink: a coarse noise field multiplied into alpha, so the red breathes instead of reading as a flat fill
     n = max(4, size // 6)
