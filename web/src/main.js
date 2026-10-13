@@ -4,7 +4,7 @@
 // then start the game and run the frame loop.
 import { Art } from "./assets.js";
 import { Audio } from "./audio.js";
-import { App, enterFullscreen } from "./app.js";
+import { App, enterFullscreen, startImmediately } from "./app.js";
 import { attachInput } from "./input.js";
 
 // Folder the images and sounds are fetched from.
@@ -44,11 +44,12 @@ async function boot() {
   $("play").textContent = touch ? "Tap to play" : "Play";
   // Runs when the player taps Play. Starting from a tap is required: browsers refuse sound and
   // fullscreen unless they come from a real user action.
-  const start = async (fullscreen) => {
+  const start = (fullscreen) => {
     $("buttons").hidden = true;
     audio.unlock();
-    if (fullscreen || touch) await enterFullscreen();
-    const app = new App({ canvas: $("game"), art, audio, storage: window.localStorage, touch });
+    const fullscreenAttempt = fullscreen || touch ? enterFullscreen() : null;
+    const app = startImmediately(fullscreenAttempt,
+      () => new App({ canvas: $("game"), art, audio, storage: window.localStorage, touch }));
     attachInput(app, $("game"));
     // The window can fire many resize events in a row; we only refit once per animation frame.
     let pending = 0;

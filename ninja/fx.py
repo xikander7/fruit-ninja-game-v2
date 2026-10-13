@@ -474,6 +474,96 @@ class Stains:
             surf.blit(img, (round(x - w / 2), round(y - w / 2)))
 
 
+TOOL_PARTS = {
+    "katana": ("blade", "hilt", "glint"),
+    "fan": ("fan", "ribs", "petals"),
+    "cleaver": ("cleaver", "handle", "flames"),
+    "chakram": ("ring", "spokes", "sparks"),
+}
+
+
+def blade_tool_model(style, now=0.0, speed=0.0):
+    """Pure description of a selected cutting tool; draw code consumes this model below."""
+    kind = style if style in TOOL_PARTS else "katana"
+    moving = min(1.0, max(0.0, speed / 1200.0))
+    motion = {
+        "katana": {"angle": math.sin(now * 18) * 0.035 * moving, "pulse": 0.92 + 0.08 * math.sin(now * 24),
+                   "glint": (now * 90) % 48},
+        "fan": {"angle": math.sin(now * 14) * 0.14, "pulse": 1.0,
+                "open": 0.72 + 0.16 * (0.5 + 0.5 * math.sin(now * 16))},
+        "cleaver": {"angle": math.sin(now * 22) * 0.075 * moving, "pulse": 1.0,
+                    "flame": 0.65 + 0.35 * math.sin(now * 31)},
+        "chakram": {"angle": now * (7 + moving * 9), "pulse": 0.94 + 0.06 * math.sin(now * 20),
+                    "orbit": now * 13},
+    }[kind]
+    return {"kind": kind, "motion": motion, "parts": [{"kind": part} for part in TOOL_PARTS[kind]]}
+
+
+def draw_blade_tool(surface, model, x, y, dx, dy, colors):
+    """Draw one procedural cutting tool, aligned with the latest swipe direction."""
+    kind, motion = model["kind"], model["motion"]
+    outer, mid, core = colors[:3]
+    heading = math.atan2(dy, dx) + (0 if kind == "chakram" else motion["angle"])
+    scale = motion["pulse"]
+
+    def point(px, py, extra=0.0):
+        a = heading + extra
+        px, py = px * scale, py * scale
+        return round(x + px * math.cos(a) - py * math.sin(a)), round(y + px * math.sin(a) + py * math.cos(a))
+
+    def poly(points, color, extra=0.0):
+        pygame.draw.polygon(surface, color, [point(px, py, extra) for px, py in points])
+
+    def stroke(a, b, color, width, extra=0.0):
+        pygame.draw.line(surface, color, point(*a, extra), point(*b, extra), width)
+
+    if kind == "katana":
+        poly([(-9, -5), (40, -4), (55, 0), (40, 4), (-9, 5)], outer)
+        poly([(-7, -3), (42, -2), (55, 0), (42, 2), (-7, 3)], mid)
+        stroke((-5, 0), (51, 0), core, 2)
+        stroke((-10, -10), (-10, 10), mid, 4)
+        stroke((-25, 0), (-11, 0), outer, 7)
+        gx = -3 + motion["glint"]
+        stroke((gx, -3), (gx + 6, 3), core, 2)
+    elif kind == "fan":
+        opening = motion["open"]
+        rim = [(-5, 0)] + [(-5 + math.cos(-opening + i * opening * 2 / 16) * 31,
+                             math.sin(-opening + i * opening * 2 / 16) * 31) for i in range(17)]
+        poly(rim, outer)
+        inner = [(-5, 0)] + [(-5 + math.cos(-opening + 0.05 + i * (opening * 2 - 0.1) / 16) * 25,
+                               math.sin(-opening + 0.05 + i * (opening * 2 - 0.1) / 16) * 25) for i in range(17)]
+        poly(inner, mid)
+        for i in range(-3, 4):
+            q = i / 3 * opening
+            stroke((-5, 0), (-5 + math.cos(q) * 29, math.sin(q) * 29), core, 1)
+        for i in range(3):
+            q = motion["angle"] * 5 + i * 2.1
+            px, py = 18 + i * 7, math.sin(q) * 10
+            poly([(px, py - 3), (px + 5, py), (px, py + 3), (px - 2, py)], core if i % 2 else mid)
+    elif kind == "cleaver":
+        stroke((-27, 0), (-6, 0), outer, 9)
+        stroke((-27, 0), (-8, 0), mid, 4)
+        poly([(-7, -12), (31, -18), (45, -12), (42, 15), (-7, 11)], outer)
+        poly([(-4, -8), (29, -13), (40, -9), (37, 10), (-4, 8)], mid)
+        stroke((1, 7), (35, 9), core, 2)
+        for i in range(3):
+            h = 8 + (i * 3 + motion["flame"] * 7) % 10
+            poly([(11 + i * 11, -12), (16 + i * 11, -12 - h), (21 + i * 11, -11)], core if i == 1 else mid)
+    else:
+        spin = motion["angle"]
+        center = point(0, 0)
+        radius = round(23 * scale)
+        pygame.draw.circle(surface, outer, center, radius, max(1, round(10 * scale)))
+        pygame.draw.circle(surface, mid, center, radius, max(1, round(5 * scale)))
+        pygame.draw.circle(surface, core, center, radius, max(1, round(2 * scale)))
+        for i in range(4):
+            q = i * math.tau / 4
+            stroke((math.cos(q) * 12, math.sin(q) * 12), (math.cos(q) * 22, math.sin(q) * 22), core, 2, spin)
+        for i in range(3):
+            q = motion["orbit"] + i * math.tau / 3
+            pygame.draw.circle(surface, mid if i != 1 else core, point(math.cos(q) * 31, math.sin(q) * 31), 2)
+
+
 class Trail:
     """The glowing ribbon that follows the blade. Keeps recent mouse positions, which expire after LIFE seconds."""
     LIFE = 0.13

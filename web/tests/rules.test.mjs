@@ -11,6 +11,33 @@ import { Boss, BossDirector, HP, CRACK_AT, COOLDOWN, DEATH } from "../src/rules/
 import { rollHazard, Shuriken, HAZARDS_FROM, SHURIKEN_SPEED, PARRY_BOOST } from "../src/rules/hazards.js";
 import { BLADES, SUBTITLE, TITLE } from "../src/config.js";
 import { Menu } from "../src/menu.js";
+import * as appModule from "../src/app.js";
+import * as fxModule from "../src/fx.js";
+
+// Proves: a mobile fullscreen request that never settles cannot hold the game on the decorative boot screen.
+test("mobile startup does not wait for fullscreen", () => {
+  const pendingFullscreen = new Promise(() => {});
+  let starts = 0;
+  const app = appModule.startImmediately?.(pendingFullscreen, () => { starts += 1; return "running"; });
+  assert.equal(starts, 1);
+  assert.equal(app, "running");
+});
+
+// Proves: selecting each blade produces a genuinely different cutting-tool geometry, not only another colour.
+test("blade skins build four different tool models", () => {
+  const expected = ["katana", "fan", "cleaver", "chakram"];
+  const models = Object.values(BLADES).map((blade) => fxModule.bladeToolModel?.(blade[4], 0, 1600));
+  assert.ok(models.every(Boolean));
+  assert.deepEqual(models.map((model) => model.kind), expected);
+  assert.equal(new Set(models.map((model) => model.parts.map((part) => part.kind).join(","))).size, 4);
+});
+
+// Proves: every cutting tool has visible motion rather than being a static recoloured cursor.
+test("every blade tool animates while moving", () => {
+  for (const style of ["katana", "fan", "cleaver", "chakram"]) {
+    assert.notDeepEqual(fxModule.bladeToolModel(style, 0, 1600), fxModule.bladeToolModel(style, 0.23, 1600));
+  }
+});
 
 // Proves: the browser game presents the approved name and supporting tagline.
 test("branding uses Honey’s Slash & Splash", () => {

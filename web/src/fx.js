@@ -418,6 +418,87 @@ export class Stains {
 // ---------------- blade trail ----------------
 
 // The glowing ribbon that follows the pointer. Points are [x, y, time]; they expire after LIFE seconds.
+const TOOL_PARTS = {
+  katana: ["blade", "hilt", "glint"],
+  fan: ["fan", "ribs", "petals"],
+  cleaver: ["cleaver", "handle", "flames"],
+  chakram: ["ring", "spokes", "sparks"],
+};
+
+/** Pure description of a selected cutting tool; draw code consumes this model below. */
+export function bladeToolModel(style, now = 0, speed = 0) {
+  const kind = Object.hasOwn(TOOL_PARTS, style) ? style : "katana";
+  const moving = Math.min(1, Math.max(0, speed / 1200));
+  const motion = {
+    katana: { angle: Math.sin(now * 18) * 0.035 * moving, pulse: 0.92 + 0.08 * Math.sin(now * 24), glint: (now * 90) % 48 },
+    fan: { angle: Math.sin(now * 14) * 0.14, pulse: 1, open: 0.72 + 0.16 * (0.5 + 0.5 * Math.sin(now * 16)) },
+    cleaver: { angle: Math.sin(now * 22) * 0.075 * moving, pulse: 1, flame: 0.65 + 0.35 * Math.sin(now * 31) },
+    chakram: { angle: now * (7 + moving * 9), pulse: 0.94 + 0.06 * Math.sin(now * 20), orbit: now * 13 },
+  }[kind];
+  return { kind, motion, parts: TOOL_PARTS[kind].map((part) => ({ kind: part })) };
+}
+
+/** Draw one procedural cutting tool, aligned with the latest swipe direction. */
+export function drawBladeTool(ctx, model, x, y, dx, dy, colors) {
+  const heading = Math.atan2(dy, dx);
+  const [outer, mid, core] = colors;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(heading + (model.kind === "chakram" ? 0 : model.motion.angle));
+  ctx.scale(model.motion.pulse, model.motion.pulse);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (model.kind === "katana") {
+    polygon(ctx, [[-9, -5], [40, -4], [55, 0], [40, 4], [-9, 5]], outer);
+    polygon(ctx, [[-7, -2.8], [42, -2.2], [55, 0], [42, 2.2], [-7, 2.8]], mid);
+    line(ctx, -5, 0, 51, 0, core, 2);
+    line(ctx, -10, -10, -10, 10, mid, 4);
+    line(ctx, -25, 0, -11, 0, outer, 7);
+    const gx = -3 + model.motion.glint;
+    line(ctx, gx, -3, gx + 6, 3, core, 2);
+  } else if (model.kind === "fan") {
+    const a = model.motion.open;
+    ctx.fillStyle = rgba(outer, 0.9);
+    ctx.beginPath(); ctx.moveTo(-5, 0); ctx.arc(-5, 0, 31, -a, a); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = rgba(mid, 0.92);
+    ctx.beginPath(); ctx.moveTo(-5, 0); ctx.arc(-5, 0, 25, -a + 0.05, a - 0.05); ctx.closePath(); ctx.fill();
+    for (let i = -3; i <= 3; i++) {
+      const q = i / 3 * a;
+      line(ctx, -5, 0, -5 + Math.cos(q) * 29, Math.sin(q) * 29, core, 1.5);
+    }
+    for (let i = 0; i < 3; i++) {
+      const q = model.motion.angle * 5 + i * 2.1;
+      ctx.save(); ctx.translate(18 + i * 7, Math.sin(q) * 10); ctx.rotate(q);
+      polygon(ctx, [[0, -3], [5, 0], [0, 3], [-2, 0]], i % 2 ? core : mid); ctx.restore();
+    }
+  } else if (model.kind === "cleaver") {
+    line(ctx, -27, 0, -6, 0, outer, 9);
+    line(ctx, -27, 0, -8, 0, mid, 4);
+    polygon(ctx, [[-7, -12], [31, -18], [45, -12], [42, 15], [-7, 11]], outer);
+    polygon(ctx, [[-4, -8], [29, -13], [40, -9], [37, 10], [-4, 8]], mid);
+    line(ctx, 1, 7, 35, 9, core, 2);
+    for (let i = 0; i < 3; i++) {
+      const h = 8 + (i * 3 + model.motion.flame * 7) % 10;
+      polygon(ctx, [[11 + i * 11, -12], [16 + i * 11, -12 - h], [21 + i * 11, -11]], i === 1 ? core : mid);
+    }
+  } else {
+    ctx.rotate(model.motion.angle);
+    ctx.strokeStyle = rgb(outer); ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(0, 0, 23, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = rgb(mid); ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(0, 0, 23, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = rgb(core); ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(0, 0, 23, 0, TAU); ctx.stroke();
+    for (let i = 0; i < 4; i++) {
+      const q = i * TAU / 4;
+      line(ctx, Math.cos(q) * 12, Math.sin(q) * 12, Math.cos(q) * 22, Math.sin(q) * 22, core, 2);
+    }
+    for (let i = 0; i < 3; i++) {
+      const q = model.motion.orbit + i * TAU / 3;
+      circle(ctx, Math.cos(q) * 31, Math.sin(q) * 31, 2.2, i === 1 ? core : mid);
+    }
+  }
+  ctx.restore();
+}
+
 export class Trail {
   constructor() {
     this.LIFE = 0.13;

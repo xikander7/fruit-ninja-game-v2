@@ -39,12 +39,12 @@ CEDAR = (92, 54, 36)  # procedural fallback wood only
 
 # Blade trail colours. Each colour is (red, green, blue), 0-255. The trail is drawn in three layers
 # (wide glow, middle, bright core) so it looks like it is lit.
-# name: (outer glow, mid, core, unlock score)
+# name: (outer glow, mid, core, unlock score, cutting-tool style)
 BLADES = {
-    "Moonlight": ((40, 90, 170), (120, 190, 255), (255, 255, 255), 0),
-    "Sakura": ((170, 40, 100), (255, 140, 195), (255, 240, 248), 0),
-    "Ember": ((190, 50, 0), (255, 140, 30), (255, 240, 190), 0),
-    "Gold Leaf": ((150, 100, 0), (255, 205, 70), (255, 255, 225), 0),
+    "Moonlight": ((40, 90, 170), (120, 190, 255), (255, 255, 255), 0, "katana"),
+    "Sakura": ((170, 40, 100), (255, 140, 195), (255, 240, 248), 0, "fan"),
+    "Ember": ((190, 50, 0), (255, 140, 30), (255, 240, 190), 0, "cleaver"),
+    "Gold Leaf": ((150, 100, 0), (255, 205, 70), (255, 255, 225), 0, "chakram"),
 }
 
 # The four game modes shown on the menu. "glyph" is the big kanji character on its button.

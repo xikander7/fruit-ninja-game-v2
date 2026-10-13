@@ -6,8 +6,8 @@
 // compose() lays them over each other with the camera (zoom, shake) and colour grade applied to the world only.
 import { W, H, VIEW, SLICE_SPEED, MAX_JUMP, BLADES, INK } from "./config.js";
 import { uniform, rgb } from "./util.js";
-import { gfx, makeCanvas, getCtx, glowImg, circle } from "./gfx.js";
-import { Trail } from "./fx.js";
+import { gfx, makeCanvas, getCtx, glowImg } from "./gfx.js";
+import { Trail, bladeToolModel, drawBladeTool } from "./fx.js";
 import { loadSave, writeSave } from "./rules/save.js";
 import { Menu } from "./menu.js";
 import { Play } from "./play.js";
@@ -34,6 +34,12 @@ export async function toggleFullscreen() {
   if (fullscreenElement()) {
     try { await (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) { /* ignore */ }
   } else await enterFullscreen();
+}
+
+/** Begin the game synchronously while a best-effort fullscreen/orientation request continues in the background. */
+export function startImmediately(fullscreenAttempt, begin) {
+  Promise.resolve(fullscreenAttempt).catch(() => {});
+  return begin();
 }
 
 export class App {
@@ -281,13 +287,14 @@ export class App {
 
   drawBlade() {
     const S = this.S, B = this.blade, RS = this.RS;
-    const colors = bladeColors(this.scene) || BLADES[this.save.blade].slice(0, 3);
+    const skin = BLADES[this.save.blade];
+    const colors = bladeColors(this.scene) || skin.slice(0, 3);
     const live = this.trail.pts.filter((q) => q);
     if (!this.pointerActive && !live.length) return;
     const xs = live.map((q) => q[0]).concat(this.pointerActive ? [this.mouse[0]] : []);
     const ys = live.map((q) => q[1]).concat(this.pointerActive ? [this.mouse[1]] : []);
-    const x0 = Math.max(-VIEW.ox, Math.min(...xs) - 40), x1 = Math.min(W + VIEW.ox, Math.max(...xs) + 40);
-    const y0 = Math.max(-VIEW.oy, Math.min(...ys) - 40), y1 = Math.min(H + VIEW.oy, Math.max(...ys) + 40);
+    const x0 = Math.max(-VIEW.ox, Math.min(...xs) - 70), x1 = Math.min(W + VIEW.ox, Math.max(...xs) + 70);
+    const y0 = Math.max(-VIEW.oy, Math.min(...ys) - 70), y1 = Math.min(H + VIEW.oy, Math.max(...ys) + 70);
     if (x1 <= x0 || y1 <= y0) return;
     B.globalCompositeOperation = "source-over";
     B.fillStyle = "#000";
@@ -302,7 +309,10 @@ export class App {
       B.globalCompositeOperation = "lighter";
       B.drawImage(g, this.mouse[0] - g.width / 2, this.mouse[1] - g.height / 2);
       B.globalCompositeOperation = "source-over";
-      circle(B, this.mouse[0], this.mouse[1], 3, rgb(colors[2]));
+      const a = live.length >= 2 ? live[live.length - 2] : [this.mouse[0] - 1, this.mouse[1]];
+      const b = live.length ? live[live.length - 1] : this.mouse;
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+      drawBladeTool(B, bladeToolModel(skin[4], this.now, this.speed), this.mouse[0], this.mouse[1], dx / len, dy / len, colors);
     }
     B.restore();
     const sx = Math.floor((x0 + VIEW.ox) * RS), sy = Math.floor((y0 + VIEW.oy) * RS);

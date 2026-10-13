@@ -28,12 +28,12 @@ export const TITLE = "Honey’s Slash & Splash";
 export const SUBTITLE = "FRUIT-SLICING ARCADE";
 
 // Blade trail skins (colours are [r, g, b]).
-// name: [outer glow, mid, core, unlock score]
+// name: [outer glow, mid, core, unlock score, cutting-tool style]
 export const BLADES = {
-  "Moonlight": [[40, 90, 170], [120, 190, 255], [255, 255, 255], 0],
-  "Sakura": [[170, 40, 100], [255, 140, 195], [255, 240, 248], 0],
-  "Ember": [[190, 50, 0], [255, 140, 30], [255, 240, 190], 0],
-  "Gold Leaf": [[150, 100, 0], [255, 205, 70], [255, 255, 225], 0],
+  "Moonlight": [[40, 90, 170], [120, 190, 255], [255, 255, 255], 0, "katana"],
+  "Sakura": [[170, 40, 100], [255, 140, 195], [255, 240, 248], 0, "fan"],
+  "Ember": [[190, 50, 0], [255, 140, 30], [255, 240, 190], 0, "cleaver"],
+  "Gold Leaf": [[150, 100, 0], [255, 205, 70], [255, 255, 225], 0, "chakram"],
 };
 
 // The four game modes: display name, a kanji glyph for the button, and a one-line rules hint.

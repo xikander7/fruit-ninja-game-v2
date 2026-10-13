@@ -1,4 +1,5 @@
 """World animation / VFX logic: blade smoothing, post-fx decay after a bomb, combo slow-mo."""
+import hashlib
 import os
 import tempfile
 import unittest
@@ -11,9 +12,10 @@ os.environ["NINJA_NO_GPU"] = "1"
 
 import pygame  # noqa: E402
 
-from ninja import game  # noqa: E402
+from ninja import fx, game  # noqa: E402
 from ninja.entities import depth_scale  # noqa: E402
 from ninja.fx import catmull_rom  # noqa: E402
+from ninja.settings import BLADES  # noqa: E402
 
 # One frame at 60 frames per second, in seconds.
 DT = 1 / 60
@@ -43,6 +45,39 @@ class CatmullRom(unittest.TestCase):
     # Proves: a single point has nothing to smooth, so it comes back unchanged.
     def test_short_input_is_returned_as_is(self):
         self.assertEqual(catmull_rom([(5, 5)], 4), [(5, 5)])
+
+
+class BladeTools(unittest.TestCase):
+    # Proves: each selectable blade produces different tool geometry rather than only another trail colour.
+    def test_four_blades_build_different_tool_models(self):
+        expected = ["katana", "fan", "cleaver", "chakram"]
+        styles = [blade[4] if len(blade) > 4 else None for blade in BLADES.values()]
+        build = getattr(fx, "blade_tool_model", lambda *_: None)
+        models = [build(style, 0.0, 1600.0) for style in styles]
+        self.assertTrue(all(models))
+        self.assertEqual([model["kind"] for model in models], expected)
+        signatures = {tuple(part["kind"] for part in model["parts"]) for model in models}
+        self.assertEqual(len(signatures), 4)
+
+    # Proves: every desktop cutting tool moves over time instead of being a static recoloured cursor.
+    def test_every_blade_tool_animates_while_moving(self):
+        for style in ("katana", "fan", "cleaver", "chakram"):
+            self.assertNotEqual(fx.blade_tool_model(style, 0.0, 1600.0),
+                                fx.blade_tool_model(style, 0.23, 1600.0))
+
+    # Proves: the real renderer paints four non-empty and visibly different tool silhouettes.
+    def test_tool_renderer_draws_four_distinct_silhouettes(self):
+        draw = getattr(fx, "draw_blade_tool", None)
+        self.assertTrue(callable(draw))
+        signatures = []
+        colors = ((40, 90, 170), (120, 190, 255), (255, 255, 255))
+        for style in ("katana", "fan", "cleaver", "chakram"):
+            surface = pygame.Surface((160, 160), pygame.SRCALPHA)
+            draw(surface, fx.blade_tool_model(style, 0.23, 1600), 80, 80, 1, 0, colors)
+            pixels = pygame.image.tobytes(surface, "RGBA")
+            self.assertTrue(any(pixels[3::4]))
+            signatures.append(hashlib.sha256(pixels).digest())
+        self.assertEqual(len(set(signatures)), 4)
 
 
 class Depth(unittest.TestCase):

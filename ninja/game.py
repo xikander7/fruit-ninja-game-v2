@@ -20,7 +20,7 @@ from .fever import Fever, on_cut as fever_cut, tick_fever, fever_fx
 from .boss import BossDirector, slice_boss, tick_boss
 from .hazards import Hazards, roll_hazard, launch_hazard, on_hit as hazard_hit, slice_hazards, tick_hazards, throw_shuriken, blade_colors, draw as draw_hazards
 from .title import TitleIntro
-from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade, blurred
+from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade, blurred, blade_tool_model, draw_blade_tool
 from .settings import CAPTION, W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
 # Blade input tuning. The mouse is the blade: a cursor moving faster than SLICE_SPEED slices, a slow drift does not.
@@ -1221,10 +1221,11 @@ class App:
 
     def draw_blade(self):
         """Draw the glowing blade trail and the cursor on the glow layer."""
-        colors = blade_colors(self.scene) or BLADES[self.save["blade"]][:3]
+        skin = BLADES[self.save["blade"]]
+        colors = blade_colors(self.scene) or skin[:3]
         xs = [p[0] for p in self.trail.pts if p] + [self.mouse[0]]
         ys = [p[1] for p in self.trail.pts if p] + [self.mouse[1]]
-        box = pygame.Rect(min(xs) - 40, min(ys) - 40, max(xs) - min(xs) + 80, max(ys) - min(ys) + 80).clip(self.frame.get_rect())
+        box = pygame.Rect(min(xs) - 70, min(ys) - 70, max(xs) - min(xs) + 140, max(ys) - min(ys) + 140).clip(self.frame.get_rect())
         if not box.w or not box.h:
             return
         if self.gpu is None:
@@ -1232,6 +1233,13 @@ class App:
         self.trail.draw(self.add, colors, self.now, outer=self.gpu is None)
         glow = self.art.soft(16 if self.speed > SLICE_SPEED else 11, colors[1], False)
         self.add.blit(glow, glow.get_rect(center=self.mouse), special_flags=pygame.BLEND_RGB_ADD)
+        live = [p for p in self.trail.pts if p]
+        a = live[-2] if len(live) >= 2 else (self.mouse[0] - 1, self.mouse[1], self.now)
+        b = live[-1] if live else (*self.mouse, self.now)
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy) or 1
+        draw_blade_tool(self.add, blade_tool_model(skin[4], self.now, self.speed), *self.mouse,
+                        dx / length, dy / length, colors)
         pygame.draw.circle(self.add, colors[2], self.mouse, 3)
         if self.gpu is None:
             self.frame.blit(self.add, box, box, special_flags=pygame.BLEND_RGB_ADD)

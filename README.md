@@ -78,6 +78,10 @@ does not cut. On a touch screen, drag your finger across the fruit.
 
 Slicing three or more fruit in one swipe is a combo and scores a bonus.
 
+Each blade has its own animated cutting tool as well as its own trail colours. Moonlight uses a glowing katana,
+Sakura opens a folding fan and scatters petals, Ember swings a flaming cleaver, and Gold Leaf spins a golden
+chakram. These are cosmetic choices: they all slice with the same speed and hit area.
+
 Ki and the three powers (Arcade and Ninja Path). Every cut fills the Ki meter by 4 points, and combos add more. At
 100 you can spend it:
 
@@ -468,9 +472,9 @@ Frenzy fruit) use the view's edges, so they do not pop in mid-screen on a wide d
 
 - Touch: a finger is the blade. A new touch never cuts a line from where the last one ended. Only the first finger
   counts.
-- Fullscreen and landscape: tapping Play on a touch device asks the browser for fullscreen and tries to lock the
-  screen to landscape. Some browsers refuse (iPhone Safari has no fullscreen for pages), and the page still fills the
-  screen.
+- Fullscreen and landscape: tapping Play starts the game immediately, then asks the browser for fullscreen and tries
+  to lock the screen to landscape in the background. A slow or refused fullscreen request cannot hold up the game;
+  iPhone Safari has no page fullscreen, so the page simply fills the available screen.
 - Upright phones: if the phone is held upright and rotation is locked, `App.resize()` draws the game turned a quarter
   turn so it still fills the screen, and `input.js` turns touch positions back.
 - Buttons: pause, mute and fullscreen are drawn on screen. Seals for the three powers appear next to the Ki bar when
@@ -557,7 +561,7 @@ Desktop version:
 1. Moon gravity: in `ninja/settings.py`, change `GRAVITY = 1250.0` to `600.0`.
 2. Faster Ki: in `ninja/powers.py`, change `KI_PER_CUT = 4` to `20`.
 3. A tougher boss: in `ninja/boss.py`, change `HP = 30` to `60`.
-4. Your own blade colours: in `ninja/settings.py`, edit the three colours of `"Moonlight"` in `BLADES`.
+4. Your own blade look: in `ninja/settings.py`, edit the colours or tool style of `"Moonlight"` in `BLADES`.
 5. A longer Fever: in `ninja/fever.py`, change `FEVER_TIME = 8.0` to `15.0`.
 
 Web version (same ideas, other files):
