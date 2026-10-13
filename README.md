@@ -32,6 +32,8 @@ Freeze. The HUD is drawn on its own layer on top of all that, so it never warps.
 
 ## Assets and tools
 
+- The sprites (fruit, bomb, background, juice splashes) are in `assets/sprites/` and the sound effects and music are
+  in `assets/audio/`.
 - The fonts (Cormorant SC, Barlow Condensed, IBM Plex Mono) are under the SIL Open Font License; the licences are in
   `assets/fonts/`.
 - `tools/build_sprites.py` and `tools/build_audio.py` rebuild `assets/sprites/` and `assets/audio/` from the raw
