@@ -14,6 +14,7 @@ import pygame  # noqa: E402
 from ninja import art, game  # noqa: E402
 from ninja.fx import stamp_scale  # noqa: E402
 from ninja.settings import W, H  # noqa: E402
+from ninja.title import make_streak  # noqa: E402
 
 # One frame at 60 frames per second, in seconds.
 DT = 1 / 60
@@ -47,6 +48,11 @@ class Scenes(unittest.TestCase):
     # Proves: the menu draws without errors.
     def test_menu_renders(self):
         self.show(game.Menu(self.app))
+
+    # Proves: a brand-new player can select every blade without earning a high score first.
+    def test_all_blades_are_available_to_a_new_player(self):
+        menu = game.Menu(self.app)
+        self.assertEqual(menu.unlocked(), ["Moonlight", "Sakura", "Ember", "Gold Leaf"])
 
     # Proves: the classic game draws, and a dropped fruit adds a strike.
     def test_play_classic_renders(self):
@@ -177,8 +183,20 @@ class Layers(unittest.TestCase):
         self.assertTrue(over.menu.body.alive)
 
 
+class TitleHelpers(unittest.TestCase):
+    # Proves: title heights whose final sine rounds just below zero still produce a valid blade streak.
+    def test_streak_tolerates_floating_point_rounding_at_its_tip(self):
+        pygame.display.set_mode((1, 1))
+        try:
+            streak = make_streak(209)
+            self.assertGreater(streak.get_width(), 48)
+            self.assertGreater(streak.get_height(), 209)
+        finally:
+            pygame.quit()
+
+
 class TitleIntro(unittest.TestCase):
-    """Task 10: the menu opens with "Slash & Splash" signed in watermelon juice."""
+    """The menu opens with "Honey’s Slash & Splash" signed in watermelon juice."""
 
     def setUp(self):
         """Use a throwaway save file and start the game at the menu."""
@@ -194,9 +212,16 @@ class TitleIntro(unittest.TestCase):
     # Proves: the game title, subtitle and window caption are the expected text.
     def test_title_strings(self):
         from ninja import settings
-        self.assertEqual(settings.TITLE, "Slash & Splash")
-        self.assertEqual(settings.SUBTITLE, "THE FRUIT NINJA")
-        self.assertEqual(pygame.display.get_caption()[0], "Slash & Splash · The Fruit Ninja")
+        self.assertEqual(settings.TITLE, "Honey’s Slash & Splash")
+        self.assertEqual(settings.SUBTITLE, "FRUIT-SLICING ARCADE")
+        self.assertEqual(pygame.display.get_caption()[0], "Honey’s Slash & Splash · Fruit-Slicing Arcade")
+
+    # Proves: the longer title remains fully visible inside the 1280-pixel game stage.
+    def test_title_fits_inside_the_stage(self):
+        intro = game.Menu(self.app).intro
+        self.assertGreaterEqual(intro.rect.left, 24)
+        seal_x, _ = intro.seal_pos()
+        self.assertLessEqual(seal_x + intro.seal.get_width(), W - 24)
 
     # Proves: the title intro slices its watermelon after half a second and finishes within two seconds.
     def test_intro_settles_within_two_seconds(self):

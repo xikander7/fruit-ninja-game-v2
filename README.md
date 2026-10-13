@@ -1,8 +1,8 @@
-# Slash & Splash
+# Honey’s Slash & Splash
 
 A fruit-slicing game. You swipe across fruit to cut it. It is set on the wooden wall of a dojo lit by a paper
 lantern, with photographic fruit, juice splashes, red hanko seals for the big moments and glowing light effects. When
-the menu opens, a watermelon is tossed up and sliced, and the name "Slash & Splash" is written in its juice.
+the menu opens, a watermelon is tossed up and sliced, and the name "Honey’s Slash & Splash" is written in its juice.
 
 ![The menu in the browser](docs/web-menu.png)
 
@@ -40,9 +40,10 @@ file does and how one frame of the game is made.
 
 - In a browser: <https://xikander7.github.io/fruit-ninja-game-v2/>. It works on computers and phones. On a phone, tap
   "Tap to play". You can hold the phone sideways or upright, and the game fills the screen either way.
-- On Windows: download `FruitNinjaNightDojo-windows.zip` from the
-  [v4.0 release](https://github.com/xikander7/fruit-ninja-game-v2/releases/tag/v4.0), unzip it and double-click
-  `FruitNinjaNightDojo.exe`. You do not need Python.
+- On Windows: build the current edition from source using the instructions in
+  [Build, run and publish](#build-run-and-publish). The older
+  [v4.0 release](https://github.com/xikander7/fruit-ninja-game-v2/releases/tag/v4.0) remains available under its
+  original filename.
 - From the source code (desktop version): you need Python 3.12 or newer.
 
   ```
@@ -60,7 +61,7 @@ does not cut. On a touch screen, drag your finger across the fruit.
 | Where | Keyboard or mouse | Touch | What it does |
 |---|---|---|---|
 | Menu | Slice a fruit, or press 1, 2, 3, 4 | Swipe or tap a fruit | Start Classic, Arcade, Zen or Ninja Path |
-| Menu | Left and right arrows (or A, D, or the mouse wheel) | Tap the arrows | Pick a blade. Better best scores unlock more blades |
+| Menu | Left and right arrows (or A, D, or the mouse wheel) | Tap the arrows | Pick Moonlight, Sakura, Ember or Gold Leaf; all four are available immediately |
 | Playing | Q, W, E | Tap a seal beside the Ki bar | Time Stop, Shadow Clones, Dragon Fire (when the Ki bar is full) |
 | Playing | Right click | | Use the last power again |
 | Playing | Esc or P | Pause button | Pause. While paused, Q goes back to the menu |
@@ -320,7 +321,7 @@ fruit-ninja-game-v2/
 |---|---|
 | `settings.py` | Screen size, gravity, colours, the blades and modes tables, where the save file lives, `resource_path()` for finding files inside the `.exe` |
 | `game.py` | `App` (window and main loop) and the screens: `World`, `Menu`, `Play`, `GameOver`, `Wipe` (the cut-in-two transition). Also loading and writing the save |
-| `title.py` | The title intro: the tossed watermelon and the "Slash & Splash" signature |
+| `title.py` | The title intro: the tossed watermelon and the "Honey’s Slash & Splash" signature |
 | `entities.py` | `Body` (a whole fruit or bomb) and `Half` (a cut half): movement and drawing |
 | `art.py` | Loads sprites and fonts, draws fallback art if a file is missing, makes the hanko seals |
 | `audio.py` | Loads sounds (or makes simple ones in code if a file is missing) and plays them |
@@ -515,7 +516,7 @@ Scores are saved as a small piece of JSON.
 }
 ```
 
-`best` holds your best score in each mode (these unlock blades), `blade` is the one you picked, `muted` is whether
+`best` holds your best score in each mode, `blade` is the one you picked, `muted` is whether
 sound is off and `total_sliced` counts every fruit you have cut. A missing or broken save just starts you fresh. The
 desktop version writes to a temporary file first and swaps it in, so a crash never leaves half a save. In the web
 version, `rules/save.js` does the loading and checking, and a blocked or full storage never crashes the game.
@@ -597,7 +598,8 @@ Windows version:
 python tools/build_windows.py
 ```
 
-This makes `dist/FruitNinjaNightDojo/` (with `FruitNinjaNightDojo.exe`) and `dist/FruitNinjaNightDojo-windows.zip`.
+This makes `dist/HoneysSlashAndSplash/` (with `HoneysSlashAndSplash.exe`) and
+`dist/HoneysSlashAndSplash-windows.zip`.
 To check a build, run the program with `NINJA_SMOKE=1`: it plays 180 frames and reports how many sprites, fonts and
 sounds it loaded.
 
@@ -614,6 +616,6 @@ The project grew in steps. Each older version is kept as a git tag, so you can l
 | `v3.0` | v3 | Photographic art and sound, GPU post-processing, juice splashes |
 | `v4.0` | v4 | Ninja Path mode (powers, Fever, bosses, hazards), the signed title, the Windows edition |
 | `v4.1` | v4.1 | The web version in JavaScript is added |
-| `main` | v5 | The current game: both versions together, tidied up |
+| `main` | current | Honey’s Slash & Splash: both editions together, with every blade available from the start |
 
 To look at an older version: `git checkout v3.0` (and `git checkout main` to come back).

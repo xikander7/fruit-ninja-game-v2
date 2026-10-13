@@ -24,16 +24,16 @@ export const STEEL = [190, 215, 235];
 export const MUTED = [150, 138, 120];
 
 // Game name shown on the title screen.
-export const TITLE = "Slash & Splash";
-export const SUBTITLE = "THE FRUIT NINJA";
+export const TITLE = "Honey’s Slash & Splash";
+export const SUBTITLE = "FRUIT-SLICING ARCADE";
 
 // Blade trail skins (colours are [r, g, b]).
 // name: [outer glow, mid, core, unlock score]
 export const BLADES = {
   "Moonlight": [[40, 90, 170], [120, 190, 255], [255, 255, 255], 0],
-  "Sakura": [[170, 40, 100], [255, 140, 195], [255, 240, 248], 100],
-  "Ember": [[190, 50, 0], [255, 140, 30], [255, 240, 190], 250],
-  "Gold Leaf": [[150, 100, 0], [255, 205, 70], [255, 255, 225], 500],
+  "Sakura": [[170, 40, 100], [255, 140, 195], [255, 240, 248], 0],
+  "Ember": [[190, 50, 0], [255, 140, 30], [255, 240, 190], 0],
+  "Gold Leaf": [[150, 100, 0], [255, 205, 70], [255, 255, 225], 0],
 };
 
 // The four game modes: display name, a kanji glyph for the button, and a one-line rules hint.

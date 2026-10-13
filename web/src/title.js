@@ -2,7 +2,7 @@
 // It is a short scripted animation, driven by one timer `t`: every constant below is a moment (in seconds) on that
 // timeline. Nothing here is physics except the cut itself, which reuses World.cut from world.js.
 //
-// The menu's title intro: a watermelon is tossed up, cut at its apex, and "Slash & Splash" is signed in its juice
+// The menu's title intro: a watermelon is tossed up, cut at its apex, and the game name is signed in its juice
 // (ninja/title.py). Plays once per Menu entry (~1.6 s), skippable; afterwards the name holds with a slow light
 // sweep now and then. The name is art on the wall (drawn into the world layer, so the juice droplets fly over it);
 // the subtitle and the seal are UI.
@@ -17,7 +17,7 @@ const TOSS = 0.42; // s: the melon rises from below the screen to its apex, wher
 const SLASH = 0.32; // s the blade streak takes to draw across and burn out
 const REVEAL_AT = 0.5, REVEAL = 0.5; // the name is signed left to right
 const SWASH_AT = 0.86, SWASH = 0.26; // the brush underline
-const SUB_AT = 0.98, SUB = 0.38; // "THE FRUIT NINJA" slides in
+const SUB_AT = 0.98, SUB = 0.38; // the subtitle slides in
 const SEAL_AT = 1.22; // the hanko lands
 export const DONE = 1.6; // settled
 const SETTLE = 0.9; // s for the wet juice under the name to dry back
@@ -28,10 +28,10 @@ const APEX = 124;
 // The title leans to the right like brush handwriting: each pixel of height shifts the text sideways by 0.17px.
 const SLANT = 0.17; // signature lean (horizontal px per px of height)
 const EDGE = 36; // px of feathered edge on the brush's leading front
+const TITLE_MAX_W = W - 2 * (24 + 4 + 44); // stage margin + seal gap + 44 px seal, on both sides for centring
 
 /** The name drawn in `color`, sheared to the right (the signature lean): x moves right by (h - y) * SLANT. */
-function slantedText(fonts, text, color, pad = 0) {
-  const font = fonts.display150;
+function slantedText(fonts, text, color, pad = 0, font = fonts.display150) {
   // A tiny throw-away canvas, only used to measure how wide the text will be.
   const probe = getCtx(makeCanvas(4, 4));
   probe.font = fonts.css(font, 1);
@@ -104,14 +104,20 @@ export class TitleIntro {
     this.sealed = false;
     const f = app.art.fonts;
     this.juice = FRUITS.watermelon.juice;
-    this.ink = slantedText(f, TITLE, WASHI);
+    let titleFont = f.display150;
+    this.ink = slantedText(f, TITLE, WASHI, 0, titleFont);
+    if (this.ink.width > TITLE_MAX_W) {
+      const size = Math.floor(titleFont.size * TITLE_MAX_W / this.ink.width);
+      titleFont = { ...titleFont, id: `${titleFont.family}${size}`, size };
+      this.ink = slantedText(f, TITLE, WASHI, 0, titleFont);
+    }
     // The "wet juice" layer: the title in juice colour, smeared in 9 directions to fatten it, then blurred.
-    const red = slantedText(f, TITLE, this.juice);
+    const red = slantedText(f, TITLE, this.juice, 0, titleFont);
     const wet = makeCanvas(red.width + 12, red.height + 12), wg = getCtx(wet);
     for (const [dx, dy] of [[0, 0], [3, 0], [-3, 0], [0, 3], [0, -3], [2, 2], [-2, 2], [2, -2], [-2, -2]]) wg.drawImage(red, 6 + dx, 6 + dy);
     this.wet = blurCanvas(wet, 2);
-    this.shadow = blurCanvas(slantedText(f, TITLE, [0, 0, 0], 6), 5);
-    this.glint = slantedText(f, TITLE, [255, 240, 214]);
+    this.shadow = blurCanvas(slantedText(f, TITLE, [0, 0, 0], 6, titleFont), 5);
+    this.glint = slantedText(f, TITLE, [255, 240, 214], 0, titleFont);
     this.rect = rectAt(this.ink.width, this.ink.height, "center", [W / 2, CY]);
     this.swash = makeSwash(Math.trunc(this.rect.w * 0.86), shade(HANKO, 1.05));
     this.streak = makeStreak(this.rect.h + 70);

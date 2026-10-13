@@ -9,6 +9,20 @@ import { KiMeter, KI_MAX } from "../src/rules/ki.js";
 import { parseSave, loadSave, writeSave, defaultSave, SAVE_KEY } from "../src/rules/save.js";
 import { Boss, BossDirector, HP, CRACK_AT, COOLDOWN, DEATH } from "../src/rules/boss.js";
 import { rollHazard, Shuriken, HAZARDS_FROM, SHURIKEN_SPEED, PARRY_BOOST } from "../src/rules/hazards.js";
+import { BLADES, SUBTITLE, TITLE } from "../src/config.js";
+import { Menu } from "../src/menu.js";
+
+// Proves: the browser game presents the approved name and supporting tagline.
+test("branding uses Honey’s Slash & Splash", () => {
+  assert.equal(TITLE, "Honey’s Slash & Splash");
+  assert.equal(SUBTITLE, "FRUIT-SLICING ARCADE");
+});
+
+// Proves: a brand-new browser player can select every blade without earning a high score first.
+test("all browser blades are available to a new player", () => {
+  const menu = { app: { save: { best: { classic: 0, arcade: 0, zen: 0, path: 0 } } } };
+  assert.deepEqual(Menu.prototype.unlocked.call(menu), Object.keys(BLADES));
+});
 
 // Proves: the blade-segment vs fruit-circle check handles hits, near misses, segment ends and zero-length segments.
 test("segHitsCircle: through, near miss, endpoint, zero-length", () => {

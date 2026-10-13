@@ -23,9 +23,9 @@ GRAVITY = 1250.0
 
 # Where high scores and unlocks are saved: a hidden file in the player's home folder.
 SAVE_PATH = Path.home() / ".fruit_ninja_dojo.json"
-TITLE = "Slash & Splash"  # the menu title, signed in juice by title.py
-SUBTITLE = "THE FRUIT NINJA"
-CAPTION = "Slash & Splash · The Fruit Ninja"
+TITLE = "Honey’s Slash & Splash"  # the menu title, signed in juice by title.py
+SUBTITLE = "FRUIT-SLICING ARCADE"
+CAPTION = "Honey’s Slash & Splash · Fruit-Slicing Arcade"
 
 # Palette: dark and few colours; light comes from the blade, juice and effects.
 INK = (10, 8, 8)
@@ -42,9 +42,9 @@ CEDAR = (92, 54, 36)  # procedural fallback wood only
 # name: (outer glow, mid, core, unlock score)
 BLADES = {
     "Moonlight": ((40, 90, 170), (120, 190, 255), (255, 255, 255), 0),
-    "Sakura": ((170, 40, 100), (255, 140, 195), (255, 240, 248), 100),
-    "Ember": ((190, 50, 0), (255, 140, 30), (255, 240, 190), 250),
-    "Gold Leaf": ((150, 100, 0), (255, 205, 70), (255, 255, 225), 500),
+    "Sakura": ((170, 40, 100), (255, 140, 195), (255, 240, 248), 0),
+    "Ember": ((190, 50, 0), (255, 140, 30), (255, 240, 190), 0),
+    "Gold Leaf": ((150, 100, 0), (255, 205, 70), (255, 255, 225), 0),
 }
 
 # The four game modes shown on the menu. "glyph" is the big kanji character on its button.

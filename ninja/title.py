@@ -1,4 +1,4 @@
-"""The menu's title intro: a watermelon is tossed up, cut at its apex, and "Slash & Splash" is signed in its juice.
+"""The menu's title intro: a watermelon is tossed up, cut at its apex, and the game name is signed in its juice.
 
 Plays once per Menu entry (~1.6 s), skippable; afterwards the name holds with a slow light sweep now and then.
 The name is art on the wall (drawn into the world layer, so the juice droplets fly over it and the post-fx grade
@@ -18,7 +18,7 @@ TOSS = 0.42  # s: the melon rises from below the screen to its apex, where the b
 SLASH = 0.32  # s the blade streak takes to draw across and burn out
 REVEAL_AT, REVEAL = 0.5, 0.5  # the name is signed left to right
 SWASH_AT, SWASH = 0.86, 0.26  # the brush underline
-SUB_AT, SUB = 0.98, 0.38  # "THE FRUIT NINJA" slides in
+SUB_AT, SUB = 0.98, 0.38  # the subtitle slides in
 SEAL_AT = 1.22  # the hanko lands
 DONE = 1.6  # settled
 SETTLE = 0.9  # s for the wet juice under the name to dry back
@@ -27,6 +27,7 @@ CY = 118  # the name's centre line
 APEX = 124
 SLANT = 0.17  # signature lean (horizontal px per px of height)
 EDGE = 36  # px of feathered edge on the brush's leading front
+TITLE_MAX_W = W - 2 * (24 + 4 + 44)  # stage margin + seal gap + 44 px seal, on both sides for centring
 
 
 def slanted(img, k=SLANT):
@@ -47,7 +48,7 @@ def make_streak(h):
         pygame.draw.line(s, shade((255, 236, 205), min(1.0, k)), (w // 2 + dx, 0), (w // 2 + dx, h))
     fade = pygame.Surface((w, h))
     for y in range(h):
-        fade.fill(shade((255, 255, 255), math.sin(math.pi * y / (h - 1)) ** 0.8), (0, y, w, 1))
+        fade.fill(shade((255, 255, 255), max(0.0, math.sin(math.pi * y / (h - 1))) ** 0.8), (0, y, w, 1))
     s.blit(fade, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
     return pygame.transform.rotate(s.convert_alpha(), -14)  # alpha: the rotated corners come out clear, not grey
 
@@ -98,7 +99,11 @@ class TitleIntro:
         self.cut = False
         self.sealed = False
         f = app.art.fonts
-        font = _font(Fonts.DISPLAY[0], 150, Fonts.DISPLAY[1], Fonts.DISPLAY[2])
+        size = 150
+        font = _font(Fonts.DISPLAY[0], size, Fonts.DISPLAY[1], Fonts.DISPLAY[2])
+        while slanted(font.render(TITLE, True, WASHI).convert_alpha()).get_width() > TITLE_MAX_W and size > 64:
+            size -= 4
+            font = _font(Fonts.DISPLAY[0], size, Fonts.DISPLAY[1], Fonts.DISPLAY[2])
         self.juice = FRUITS["watermelon"].juice
         self.ink = slanted(font.render(TITLE, True, WASHI).convert_alpha())
         red = slanted(font.render(TITLE, True, self.juice).convert_alpha())

@@ -1,9 +1,9 @@
-"""Build the Windows edition: a self-contained folder with FruitNinjaNightDojo.exe, zipped for sharing.
+"""Build the Windows edition: a self-contained folder with HoneysSlashAndSplash.exe, zipped for sharing.
 
     pip install -r requirements.txt
     python tools/build_windows.py
 
-Output: dist/FruitNinjaNightDojo/ (double-click the .exe, no Python needed) and dist/FruitNinjaNightDojo-windows.zip.
+Output: dist/HoneysSlashAndSplash/ (double-click the .exe, no Python needed) and dist/HoneysSlashAndSplash-windows.zip.
 Both dist/ and build/ are git-ignored: the zip is a release file, not part of the repo."""
 import io
 import os
@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-NAME = "FruitNinjaNightDojo"
+NAME = "HoneysSlashAndSplash"
 DIST = ROOT / "dist"
 WORK = ROOT / "build" / "pyinstaller"
 
