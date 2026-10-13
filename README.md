@@ -22,15 +22,16 @@ file does and how one frame of the game is made.
 1. [Play it](#play-it)
 2. [Controls and game modes](#controls-and-game-modes)
 3. [How the project fits together](#how-the-project-fits-together)
-4. [The technologies, in plain words](#the-technologies-in-plain-words)
-5. [Every file and folder](#every-file-and-folder)
-6. [How one frame works](#how-one-frame-works)
-7. [The web version in detail](#the-web-version-in-detail)
-8. [How saving works](#how-saving-works)
-9. [Tests](#tests)
-10. [Try changing something](#try-changing-something)
-11. [Build, run and publish](#build-run-and-publish)
-12. [History of the project](#history-of-the-project)
+4. [Why Python, and which languages could build this](#why-python-and-which-languages-could-build-this)
+5. [The technologies, in plain words](#the-technologies-in-plain-words)
+6. [Every file and folder](#every-file-and-folder)
+7. [How one frame works](#how-one-frame-works)
+8. [The web version in detail](#the-web-version-in-detail)
+9. [How saving works](#how-saving-works)
+10. [Tests](#tests)
+11. [Try changing something](#try-changing-something)
+12. [Build, run and publish](#build-run-and-publish)
+13. [History of the project](#history-of-the-project)
 
 ---
 
@@ -126,6 +127,59 @@ Why two versions? Browsers run JavaScript natively and draw with the graphics ca
 if the whole Python interpreter is shipped to the page, and in that form the game was too slow on phones, could not
 fill the window and had crackling sound. So the web version is plain JavaScript, and the Python version stays as a
 desktop game.
+
+---
+
+## Why Python, and which languages could build this
+
+The desktop game is written in Python because Python is the most common language to learn first. It is easy to read,
+it has a huge community, and a beginner can follow the code without much setup. That is the reason it was chosen,
+and it is a good reason for learning. It is not the best choice for every goal, so here is the full picture.
+
+What matters most is where the game has to run. A language that is native to the place you ship to will always have
+the smoothest result.
+
+### Languages ranked for a game like this, shipped live on the web and on phones
+
+| Rank | Language and tools | Where it runs | Good at | Weak at | Best for |
+|---|---|---|---|---|---|
+| 1 | JavaScript or TypeScript (Canvas 2D, or the libraries PixiJS and Phaser) | Every browser on every phone and computer, with nothing to install | Starting from a link. Small downloads. Touch, sound and fullscreen are built into the browser. TypeScript adds type checking that catches mistakes early | Very heavy 3D or huge simulations. Not an app-store app unless wrapped | A game that must be live today. This is what the web version here uses |
+| 2 | Godot (GDScript, or C#) | Web, Android, iPhone, Windows, Mac, Linux from one project | A complete engine: scenes, physics, animation, an editor. Free and open source. Good 2D | The web export is a bigger download than a hand-written web game, and phones load it slower | A game you want on app stores as well as the web |
+| 3 | Unity (C#) | Almost everything, including consoles | Huge tooling, the biggest job market, many ready-made assets | Heavy for a small 2D game. Web builds are large and slow to start | A bigger team, 3D, or console releases |
+| 4 | Rust compiled to WebAssembly (Bevy, macroquad) | Browsers and desktop | Very fast and memory safe. Small output files | Slower to write. A steep learning curve for beginners | A game with heavy calculations, or a developer who wants Rust |
+| 5 | Dart with Flutter (the Flame engine) | Android, iPhone, web, desktop | One code base for phone apps. Smooth user interface | The web build is heavy, and the game tooling is smaller than the others | Mobile apps that are mostly interface with some game parts |
+| 6 | Python (pygame) | Windows, Mac and Linux. In a browser only through a slow workaround | Easiest to learn and read. Great for prototypes, tools and teaching. Strong libraries for data and file processing | Needs the whole Python interpreter to run in a browser, so it is slow and large on phones. Weak on mobile stores | Learning, desktop games, and build scripts |
+
+Other languages that are worth knowing about:
+
+- C# with MonoGame is a solid choice for desktop games.
+- C++ with Unreal Engine or SDL powers most big commercial games. It gives the best speed and the hardest learning
+  curve.
+- Lua with LÖVE is tiny and quick for 2D prototypes, and it has no good mobile or browser story.
+- Swift (iPhone and Mac) and Kotlin (Android) are the native languages for each phone system, and each runs only
+  there.
+- Java with libGDX still works for Android and desktop games.
+
+### How to choose
+
+Ask three questions in this order:
+
+1. Where must it run? If the answer is "in a browser, from a link, on any phone", pick JavaScript or TypeScript. If
+   it is "on app stores", pick Godot or Unity. If it is "on my own computer", almost anything works, including
+   Python.
+2. Who is building it? A beginner gets the most from a language they can read, which is why Python and JavaScript
+   come first for learning.
+3. How heavy is the game? A 2D slicer like this one is light. Only 3D worlds and big simulations need the bigger
+   engines or a systems language.
+
+### What happened in this project
+
+This game started as plain JavaScript (version 1), was rebuilt in Python with pygame (version 2 onward) for the
+desktop look and the Windows build, and was then packed for browsers with a tool that runs Python inside the page.
+That last step was the weak point: it was slow on phones, could not fill the window and made crackling sound. So the
+web version was ported back to JavaScript, and the Python version stayed as the desktop game. The two share the
+same assets and rules. The lesson for a beginner: use the language you know to learn and to prototype, and use the
+language the target platform speaks when you ship.
 
 ---
 
