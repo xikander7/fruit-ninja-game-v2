@@ -66,6 +66,11 @@ test("successful submission updates global memory while every failure remains ha
   assert.deepEqual(await App.prototype.submitGlobalRun.call(app, play), { mode: "arcade", globalBest: 480, newRecord: true });
   assert.equal(app.globalBest.arcade, 480);
 
+  app.globalBest = null;
+  await App.prototype.submitGlobalRun.call(app, play);
+  assert.deepEqual(app.globalBest, { arcade: 480 });
+  assert.equal(scoreLabel(12, app.globalBest, "classic"), "Personal 12 · Global —");
+
   app.leaderboard.finishRun = async () => { throw new Error("offline"); };
   await assert.doesNotReject(() => App.prototype.submitGlobalRun.call(app, play));
   assert.equal(app.globalBest.arcade, 480);

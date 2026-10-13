@@ -22,8 +22,29 @@ async function readJson(request) {
   }
   const announced = Number(request.headers.get("Content-Length") || 0);
   if (announced > MAX_BODY_BYTES) throw Object.assign(new Error("body_too_large"), { status: 413 });
-  const text = await request.text();
-  if (encoder.encode(text).byteLength > MAX_BODY_BYTES) throw Object.assign(new Error("body_too_large"), { status: 413 });
+  const reader = request.body && request.body.getReader();
+  const chunks = [];
+  let length = 0;
+  if (reader) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > MAX_BODY_BYTES) {
+          await reader.cancel();
+          throw Object.assign(new Error("body_too_large"), { status: 413 });
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  const text = new TextDecoder().decode(bytes);
   try { return JSON.parse(text); }
   catch (_error) { throw Object.assign(new Error("invalid_json"), { status: 400 }); }
 }
@@ -84,6 +105,7 @@ async function finishRun(request, env, cors, now) {
     const status = validation.message === "body_too_large" ? 413 : 400;
     return error(validation.message, status, cors);
   }
+  if (now - claims.issuedAt + 2_000 < run.elapsed * 1_000) return error("invalid_duration", 400, cors);
   const hash = await sourceHash(request, env.RATE_LIMIT_SALT);
   if (!await takeRateSlot(env.DB, hash, now)) return error("rate_limited", 429, cors);
   if (!await consumeNonce(env.DB, claims.nonce, claims.issuedAt + TOKEN_LIFETIME_MS, now)) {
@@ -113,7 +135,7 @@ export async function handleRequest(request, env, now = Date.now()) {
       const token = await createRunToken(claims, env.RUN_TOKEN_SECRET);
       return json({ token, expiresIn: TOKEN_LIFETIME_MS / 1000 }, 201, cors);
     }
-    if (request.method === "POST" && pathname === "/v1/runs/finish") return finishRun(request, env, cors, now);
+    if (request.method === "POST" && pathname === "/v1/runs/finish") return await finishRun(request, env, cors, now);
     return error("not_found", 404, cors);
   } catch (caught) {
     if (caught && Number.isInteger(caught.status)) return error(caught.message, caught.status, cors);

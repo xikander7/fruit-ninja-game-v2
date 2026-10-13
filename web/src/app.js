@@ -4,7 +4,7 @@
 //   L   the lit world            add  glow only (black = none), added over L and bloomed
 //   ui  HUD, stamps, text        blade  the player's blade trail, drawn last
 // compose() lays them over each other with the camera (zoom, shake) and colour grade applied to the world only.
-import { W, H, VIEW, SLICE_SPEED, MAX_JUMP, BLADES, MODES, INK } from "./config.js";
+import { W, H, VIEW, SLICE_SPEED, MAX_JUMP, BLADES, INK } from "./config.js";
 import { uniform, rgb } from "./util.js";
 import { gfx, makeCanvas, getCtx, glowImg } from "./gfx.js";
 import { Trail, bladeToolModel, drawBladeTool } from "./fx.js";
@@ -97,8 +97,8 @@ export class App {
         stats: { ...play.stats },
       });
       if (!result) return null;
-      if (!this.globalBest) this.globalBest = Object.fromEntries(Object.keys(MODES).map((mode) => [mode, 0]));
-      this.globalBest[result.mode] = Math.max(this.globalBest[result.mode], result.globalBest);
+      if (!this.globalBest) this.globalBest = {};
+      this.globalBest[result.mode] = Math.max(this.globalBest[result.mode] ?? 0, result.globalBest);
       if (this.scene && typeof this.scene.refreshScores === "function") this.scene.refreshScores();
       return result;
     } catch (_error) {
