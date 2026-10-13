@@ -605,14 +605,15 @@ sounds it loaded.
 
 ## History of the project
 
-The project grew in steps, each kept on its own branch.
+The project grew in steps. Each older version is kept as a git tag, so you can look at it without any extra branches.
 
-| Branch | Version | What it is |
+| Tag | Version | What it is |
 |---|---|---|
 | (first commit on `main`) | v1 | The original game in plain HTML, CSS and JavaScript |
-| `feature/pygame-ninja` | v2 | Rewritten in Python with pygame-ce: the dojo, three modes, blades, seals |
-| `feature/premium-ninja` | v3 | Photographic art and sound, GPU post-processing, juice splashes |
-| `feature/ninja-path` | v4 | Ninja Path mode (powers, Fever, bosses, hazards), the Hanifa title, the Windows edition |
-| `main` | v5 | The web version in JavaScript replaces the Python-in-the-browser build |
+| `v2.0` | v2 | Rewritten in Python with pygame-ce: the dojo, three modes, blades, seals |
+| `v3.0` | v3 | Photographic art and sound, GPU post-processing, juice splashes |
+| `v4.0` | v4 | Ninja Path mode (powers, Fever, bosses, hazards), the Hanifa title, the Windows edition |
+| `v4.1` | v4.1 | The web version in JavaScript is added |
+| `main` | v5 | The current game: both versions together, tidied up |
 
-To look at an older version: `git checkout feature/premium-ninja`.
+To look at an older version: `git checkout v3.0` (and `git checkout main` to come back).
