@@ -4,11 +4,12 @@
 //   L   the lit world            add  glow only (black = none), added over L and bloomed
 //   ui  HUD, stamps, text        blade  the player's blade trail, drawn last
 // compose() lays them over each other with the camera (zoom, shake) and colour grade applied to the world only.
-import { W, H, VIEW, SLICE_SPEED, MAX_JUMP, BLADES, INK } from "./config.js";
+import { W, H, VIEW, SLICE_SPEED, MAX_JUMP, BLADES, MODES, INK } from "./config.js";
 import { uniform, rgb } from "./util.js";
 import { gfx, makeCanvas, getCtx, glowImg } from "./gfx.js";
 import { Trail, bladeToolModel, drawBladeTool } from "./fx.js";
 import { loadSave, writeSave } from "./rules/save.js";
+import { LeaderboardClient } from "./rules/leaderboard.js";
 import { Menu } from "./menu.js";
 import { Play } from "./play.js";
 import { GameOver } from "./gameover.js";
@@ -43,11 +44,13 @@ export function startImmediately(fullscreenAttempt, begin) {
 }
 
 export class App {
-  constructor({ canvas, art, audio, storage, touch }) {
+  constructor({ canvas, art, audio, storage, touch, leaderboard = new LeaderboardClient() }) {
     this.canvas = canvas;
     this.S = getCtx(canvas);
     this.art = art; this.audio = audio; this.storage = storage; this.touch = touch;
     this.save = loadSave(storage);
+    this.leaderboard = leaderboard;
+    this.globalBest = null;
     if (this.save.muted) audio.muted = true;
     this.trail = new Trail();
     this.now = 0; this.speed = 0;
@@ -63,12 +66,45 @@ export class App {
     this.resize();
     this.scene = new Menu(this);
     this.audio.startMusic();
+    void this.refreshGlobalScores();
   }
 
   persist() { writeSave(this.storage, this.save); }
   makePlay(mode) { return new Play(this, mode); }
   makeMenu() { return new Menu(this); }
   makeGameOver(play, snap) { return new GameOver(this, play, snap); }
+
+  async refreshGlobalScores() {
+    try {
+      const scores = await this.leaderboard.loadScores();
+      if (!scores) return null;
+      this.globalBest = scores;
+      if (this.scene && typeof this.scene.refreshScores === "function") this.scene.refreshScores();
+      return scores;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  async submitGlobalRun(play) {
+    try {
+      const run = await play.remoteRunPromise;
+      if (!run) return null;
+      const result = await this.leaderboard.finishRun(run, {
+        mode: play.mode,
+        score: play.score,
+        elapsed: Math.max(1, Math.round(play.elapsed)),
+        stats: { ...play.stats },
+      });
+      if (!result) return null;
+      if (!this.globalBest) this.globalBest = Object.fromEntries(Object.keys(MODES).map((mode) => [mode, 0]));
+      this.globalBest[result.mode] = Math.max(this.globalBest[result.mode], result.globalBest);
+      if (this.scene && typeof this.scene.refreshScores === "function") this.scene.refreshScores();
+      return result;
+    } catch (_error) {
+      return null;
+    }
+  }
 
   /** Fit the view to the window: the stage plus extra wall for the window's shape, so the picture always fills it. */
   resize() {

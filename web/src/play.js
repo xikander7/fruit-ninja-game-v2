@@ -25,6 +25,19 @@ import { launchHazard, onHit as hazardHit, sliceHazards, tickHazards, drawHazard
 // The "Quit to menu" button on the pause screen, in stage pixels (x, y = top-left corner).
 const QUIT_RECT = { x: W / 2 - 110, y: H / 2 + 78, w: 220, h: 48 };
 
+export function beginRemoteRun(client, mode) {
+  if (!client || typeof client.startRun !== "function") return Promise.resolve(null);
+  return Promise.resolve().then(() => client.startRun(mode)).catch(() => null);
+}
+
+export function saveFinishedRun(play) {
+  const save = play.app.save;
+  save.best[play.mode] = Math.max(save.best[play.mode], play.score);
+  save.total_sliced += play.stats.sliced;
+  play.app.persist();
+  void play.app.submitGlobalRun(play);
+}
+
 // A Scene (see menu.js). `mode` is "classic", "arcade", "zen" or "path".
 // state moves through: ready -> play -> (dying | ending) -> over.
 export class Play extends Scene {
@@ -73,6 +86,7 @@ export class Play extends Scene {
     // The score on screen counts up smoothly toward the real score.
     this.shown = 0; // the score as displayed: rolls toward this.score
     this.lastTick = null;
+    this.remoteRunPromise = beginRemoteRun(app.leaderboard, mode);
     const m = MODES[mode];
     this.w.stamp(m.glyph, "Ready", W / 2, H / 2 - 20, 150);
     app.audio.play("gong");
@@ -413,10 +427,7 @@ export class Play extends Scene {
   end() {
     this.state = "over";
     if (this.combo) this.finishCombo();
-    const save = this.app.save;
-    save.best[this.mode] = Math.max(save.best[this.mode], this.score);
-    save.total_sliced += this.stats.sliced;
-    this.app.persist();
+    saveFinishedRun(this);
     this.app.audio.quiet();
     const snap = this.app.snapshot();
     this.app.go(() => this.app.makeGameOver(this, snap));

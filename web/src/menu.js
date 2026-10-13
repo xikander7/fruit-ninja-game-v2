@@ -10,6 +10,11 @@ import { segHitsCircle } from "./rules/collide.js";
 
 import { World } from "./world.js";
 import { TitleIntro } from "./title.js";
+
+export function scoreLabel(personal, globalBest, mode) {
+  const global = globalBest && Number.isSafeInteger(globalBest[mode]) ? globalBest[mode] : "—";
+  return `Personal ${personal} · Global ${global}`;
+}
 import { drawIcons, hitIcon } from "./hud.js";
 
 // A "scene" is one screen of the game. The App calls these methods every frame on whichever scene is active.
@@ -111,7 +116,8 @@ export class Menu extends Scene {
     const spec = [["classic", "watermelon"], ["arcade", "dragonfruit"], ["zen", "peach"], ["path", "golden"]];
     spec.forEach(([mode, kind], i) => {
       const m = MODES[mode];
-      const b = new SliceButton(this.w, kind, W * [0.17, 0.39, 0.61, 0.83][i], 388, m.glyph, m.title, m.hint, `Best ${best[mode]}`);
+      const b = new SliceButton(this.w, kind, W * [0.17, 0.39, 0.61, 0.83][i], 388, m.glyph, m.title, m.hint,
+        scoreLabel(best[mode], app.globalBest, mode));
       b.mode = mode;
       this.buttons.push(b);
     });
@@ -122,6 +128,12 @@ export class Menu extends Scene {
     this.par = [0.0, 0.0];
     this.setBg();
     this.intro = new TitleIntro(app, this.w);
+  }
+
+  refreshScores() {
+    for (const button of this.buttons) {
+      button.sub2 = scoreLabel(this.app.save.best[button.mode], this.app.globalBest, button.mode);
+    }
   }
 
   // True once the opening title animation (title.js) has finished.
