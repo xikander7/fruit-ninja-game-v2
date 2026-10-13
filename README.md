@@ -1,7 +1,7 @@
 # Honey’s Slash & Splash
 
-A fruit-slicing game. You swipe across fruit to cut it. It is set on the wooden wall of a dojo lit by a paper
-lantern, with photographic fruit, juice splashes, red hanko seals for the big moments and glowing light effects. When
+A fruit-slicing game. You swipe across fruit to cut it. It is set on a lantern-lit wooden wall,
+with photographic fruit, juice splashes, red ink seals for the big moments and glowing light effects. When
 the menu opens, a watermelon is tossed up and sliced, and the name "Honey’s Slash & Splash" is written in its juice.
 
 ![The menu in the browser](docs/web-menu.png)
@@ -60,9 +60,9 @@ does not cut. On a touch screen, drag your finger across the fruit.
 
 | Where | Keyboard or mouse | Touch | What it does |
 |---|---|---|---|
-| Menu | Slice a fruit, or press 1, 2, 3, 4 | Swipe or tap a fruit | Start Classic, Arcade, Zen or Ninja Path |
-| Menu | Left and right arrows (or A, D, or the mouse wheel) | Tap the arrows | Pick Moonlight, Sakura, Ember or Gold Leaf; all four are available immediately |
-| Playing | Q, W, E | Tap a seal beside the Ki bar | Time Stop, Shadow Clones, Dragon Fire (when the Ki bar is full) |
+| Menu | Slice a fruit, or press 1, 2, 3, 4 | Swipe or tap a fruit | Start Classic, Arcade, Zen or Hero Path |
+| Menu | Left and right arrows (or A, D, or the mouse wheel) | Tap the arrows | Pick Moonlight, Petal Fan, Ember or Gold Leaf; all four are available immediately |
+| Playing | Q, W, E | Tap a seal beside the Power bar | Time Stop, Shadow Clones, Dragon Fire (when the Power bar is full) |
 | Playing | Right click | | Use the last power again |
 | Playing | Esc or P | Pause button | Pause. While paused, Q goes back to the menu |
 | Results | Enter, R or Space / Esc | Slice or tap the fruit | Retry / back to the menu |
@@ -72,17 +72,17 @@ does not cut. On a touch screen, drag your finger across the fruit.
 | Mode | Rules |
 |---|---|
 | Classic | Dropping a fruit is a strike. Three strikes end the run. A bomb ends it at once. Every 100 points takes one strike back. |
-| Arcade | 60 seconds. Bombs cost 10 points. Power bananas give Freeze, Frenzy or Double score. Ki powers and Fever are on. |
+| Arcade | 60 seconds. Bombs cost 10 points. Power bananas give Freeze, Frenzy or Double score. Powers and Fever are on. |
 | Zen | 90 seconds, no bombs. Just slicing. |
-| Ninja Path | Endless, with 3 lives. A dropped fruit or a bomb costs a life, and a life comes back every 150 points. Ki powers, Fever, bosses and hazards are on. |
+| Hero Path | Endless, with 3 lives. A dropped fruit or a bomb costs a life, and a life comes back every 150 points. Powers, Fever, bosses and hazards are on. |
 
 Slicing three or more fruit in one swipe is a combo and scores a bonus.
 
 Each blade has its own animated cutting tool as well as its own trail colours. Moonlight uses a glowing katana,
-Sakura opens a folding fan and scatters petals, Ember swings a flaming cleaver, and Gold Leaf spins a golden
+Petal Fan opens a folding fan and scatters petals, Ember swings a flaming cleaver, and Gold Leaf spins a golden
 chakram. These are cosmetic choices: they all slice with the same speed and hit area.
 
-Ki and the three powers (Arcade and Ninja Path). Every cut fills the Ki meter by 4 points, and combos add more. At
+Power and the three special moves (Arcade and Hero Path). Every cut fills the Power meter by 4 points, and combos add more. At
 100 you can spend it:
 
 - Time Stop: the world freezes for 3 seconds. Draw a path through the fruit, then every fruit you touched is cut in
@@ -90,13 +90,13 @@ Ki and the three powers (Arcade and Ninja Path). Every cut fills the Ki meter by
 - Shadow Clones: three ghost blades hunt fruit on their own for 5 seconds. They never hit bombs.
 - Dragon Fire: for 6 seconds a fruit you cut bursts into flame and sets every fruit within 140 pixels on fire too.
 
-Fever (Arcade and Ninja Path). Cuts in a row build a score multiplier: x2 after 10 cuts, up to x5. At x5 the dojo
+Fever (Arcade and Hero Path). Cuts in a row build a score multiplier: x2 after 10 cuts, up to x5. At x5 the arena
 turns gold for 8 seconds and fruit rains down. A strike or a bomb resets the chain.
 
-Bosses (Ninja Path). After 45 seconds a Durian rises out of the dark. Later comes a Pineapple King. Each takes 30
+Bosses (Hero Path). After 45 seconds a Durian rises out of the dark. Later comes a Pineapple King. Each takes 30
 hits before it splits open, and if you are too slow it escapes.
 
-Hazards and special fruit (Ninja Path, after 20 seconds):
+Hazards and special fruit (Hero Path, after 20 seconds):
 
 - Shuriken: a throwing star flies at your pointer. If it hits, you lose a life. Slice it fast to knock it away.
 - Ice bomb: slicing it freezes your blade for 2 seconds.
@@ -108,7 +108,7 @@ Hazards and special fruit (Ninja Path, after 20 seconds):
 ## How the project fits together
 
 ```
-                 assets/  (sprites, sounds, fonts, kanji stencils)
+                 assets/  (sprites, sounds, fonts, legacy glyph stencils)
                     |
         +-----------+-----------+
         |                       |
@@ -287,8 +287,8 @@ numpy does fast maths on large arrays. The build tools use it to process sound f
 ### Fonts
 
 Cormorant SC (titles), Barlow Condensed (numbers) and IBM Plex Mono (small labels) are under the SIL Open Font
-License, which allows bundling them with a game. The licences are in `assets/fonts/`. The kanji on the seals are
-stencils in `assets/glyphs/`, made from Zen Kaku Gothic New (also OFL).
+License, which allows bundling them with a game. The licences are in `assets/fonts/`. English seal labels use the
+bundled Barlow Condensed font. `assets/glyphs/` contains legacy stencils retained for older builds but no longer loaded.
 
 ---
 
@@ -312,10 +312,10 @@ fruit-ninja-game-v2/
 
 | Folder | What is in it |
 |---|---|
-| `sprites/` | One PNG per fruit, one per cut half (`apple_half.png`), the bomb, ice bomb, shuriken, the Durian and Pineapple King, four juice splash photos, and `background.jpg` (the dojo wall) |
+| `sprites/` | One PNG per fruit, one per cut half (`apple_half.png`), the bomb, ice bomb, shuriken, the Durian and Pineapple King, four juice splash photos, and `background.jpg` (the wooden wall) |
 | `audio/` | Sound effects and music as WAV files. Names look like `splat1_3.wav`: the letters say which sound, the last number is the variation |
 | `fonts/` | The three fonts and their licence files |
-| `glyphs/` | One PNG per kanji character used on the seals, named by the character's hex code (`65ac.png` is the character 斬) |
+| `glyphs/` | Legacy seal stencil PNGs retained for older builds; the English-only game does not load them |
 
 `assets/raw/` holds the unprocessed source files. It is not stored in git.
 
@@ -327,12 +327,12 @@ fruit-ninja-game-v2/
 | `game.py` | `App` (window and main loop) and the screens: `World`, `Menu`, `Play`, `GameOver`, `Wipe` (the cut-in-two transition). Also loading and writing the save |
 | `title.py` | The title intro: the tossed watermelon and the "Honey’s Slash & Splash" signature |
 | `entities.py` | `Body` (a whole fruit or bomb) and `Half` (a cut half): movement and drawing |
-| `art.py` | Loads sprites and fonts, draws fallback art if a file is missing, makes the hanko seals |
+| `art.py` | Loads sprites and fonts, draws fallback art if a file is missing, makes the red ink seals |
 | `audio.py` | Loads sounds (or makes simple ones in code if a file is missing) and plays them |
 | `fx.py` | Juice particles, stains on the wall, the blade trail, screen shake, score popups, seal stamps |
 | `gpu.py` | The GLSL shaders for bloom, vignette, colour fringing, shockwaves and grain |
-| `hud.py` | Score, timer, strikes and lives, Ki meter, multiplier, boss bar |
-| `powers.py` | The Ki meter and the three powers |
+| `hud.py` | Score, timer, strikes and lives, Power meter, multiplier, boss bar |
+| `powers.py` | The Power meter and the three powers |
 | `fever.py` | The cut chain, the multiplier and the fruit rain |
 | `boss.py` | `Boss` (Durian, Pineapple King) and `BossDirector` (decides when one appears) |
 | `hazards.py` | Shuriken, ice bomb, golden fruit, chaos fruit |
@@ -350,7 +350,7 @@ without OpenGL), `test_art.py`, `test_audio.py`, `test_ui.py`, `test_package.py`
 | `build_sprites.py` | Turns the raw cutouts in `assets/raw` into the game sprites |
 | `build_boot_art.py` | Cuts the larger fruit and splash images used by the loading screen into `assets/boot` (needs Pillow) |
 | `build_audio.py` | Splits and trims the raw audio into game-ready WAV files |
-| `build_glyphs.py` | Renders the kanji stencils from an OFL font |
+| `build_glyphs.py` | Legacy tool that rendered the old seal stencils |
 | `build_windows.py` | Builds the Windows edition with PyInstaller |
 | `build_web_js.py` | Builds `web/assets/`: converts the sounds to 22 kHz mono, copies sprites, boot art, fonts and glyphs, writes the sound list |
 | `deploy_web.py` | Builds the site into `build/site` and, with `--push`, publishes it to the `gh-pages` branch |
@@ -373,7 +373,7 @@ The rules, in `web/src/rules/`. These files have no drawing code, so Node can te
 |---|---|
 | `collide.js` | Does a swipe segment touch a circle, rotating a point, how big a thrown fruit looks at the top of its arc |
 | `fever.js` | The chain, the x1 to x5 multiplier, the 8 second Fever and its fruit rain |
-| `ki.js` | The Ki meter |
+| `ki.js` | The internal rules for the Power meter |
 | `boss.js` | The boss: 30 hit points, rise, hover and escape phases, crack stages, and when the next boss appears |
 | `hazards.js` | The hazard odds, the shuriken's flight and how a parry bounces it, and constants for ice and golden fruit |
 | `save.js` | Reading and writing the save, with fallbacks for missing or broken data |
@@ -387,7 +387,7 @@ The game, in `web/src/`:
 | `config.js` | Sizes, colours, the fruit table, modes, blades. The `VIEW` object records the visible area |
 | `util.js` | Random-number helpers, colour helpers, a seeded random generator |
 | `gfx.js` | Drawing helpers: rotated sprites, cached glow images, shadows, blur, curve smoothing |
-| `assets.js` | Loads sprites, fonts and glyphs. Builds shadows, juice-tinted splashes, the hanko seals, the wall with its vignette, the text cache |
+| `assets.js` | Loads sprites and fonts. Builds shadows, juice-tinted splashes, English red ink seals, the wall with its vignette, and the text cache |
 | `ui.js` | Small helpers for placing text and drawing labels and bars |
 | `input.js` | Turns mouse, touch and keyboard events into a simple list of events with stage coordinates |
 | `audio.js` | The Web Audio mixer: loading, one music voice, sound effects, the limiter |
@@ -398,7 +398,7 @@ The game, in `web/src/`:
 | `menu.js` | The menu, plus `SliceButton`, the fruit you cut to choose |
 | `play.js` | A run: spawning waves, scoring, combos, strikes, the clock, pause |
 | `gameover.js` | The results screen |
-| `hud.js` | Score, timer, strikes, Ki bar and power seals, the colour grades over the world, the on-screen buttons |
+| `hud.js` | Score, timer, strikes, Power bar and power seals, the colour grades over the world, the on-screen buttons |
 | `powers.js` | Time Stop, Shadow Clones, Dragon Fire |
 | `fever.js` | How Fever plugs into a run |
 | `boss.js` | How a boss looks (sprite, cracks, split halves) and how it plugs into a run |
@@ -463,7 +463,7 @@ most screens). The steps match the desktop version:
 
 All game rules work on a fixed stage of 1280 by 720 units. The window is almost never exactly that shape, so
 `App.resize()` works out a view: the stage plus extra wall around it. A wide window shows more wall left and right, a
-tall one shows more above and below, within limits. The dojo wall image is stretched to cover the whole view, so
+tall one shows more above and below, within limits. The wooden wall image is stretched to cover the whole view, so
 there are no black bars on a laptop or a phone. `VIEW` in `config.js` stores the size and the offset of the stage
 inside the view, and every layer is drawn with that offset applied. Things that must start off screen (a shuriken,
 Frenzy fruit) use the view's edges, so they do not pop in mid-screen on a wide display.
@@ -477,7 +477,7 @@ Frenzy fruit) use the view's edges, so they do not pop in mid-screen on a wide d
   iPhone Safari has no page fullscreen, so the page simply fills the available screen.
 - Upright phones: if the phone is held upright and rotation is locked, `App.resize()` draws the game turned a quarter
   turn so it still fills the screen, and `input.js` turns touch positions back.
-- Buttons: pause, mute and fullscreen are drawn on screen. Seals for the three powers appear next to the Ki bar when
+- Buttons: pause, mute and fullscreen are drawn on screen. Seals for the three powers appear next to the Power bar when
   it is full.
 - Slow phones: `App.adapt()` watches the frame time. If frames stay slow, it turns the glow down a step, then off,
   and lowers the particle limit.
@@ -544,7 +544,7 @@ JavaScript (web version):
 node --test "web/tests/*.test.mjs"
 ```
 
-They cover the rules: whether a swipe touches a circle, the Fever steps and rain, the Ki meter, saves (valid, corrupt,
+They cover the rules: whether a swipe touches a circle, the Fever steps and rain, the Power meter, saves (valid, corrupt,
 and storage that throws), the boss (30 hits, the hit cooldown, crack stages, appearing every 45 seconds) and the
 shuriken (flight, parry, leaving the screen).
 
@@ -559,7 +559,7 @@ Change one value, run the game, see what happens. Undo with `git checkout -- .`
 Desktop version:
 
 1. Moon gravity: in `ninja/settings.py`, change `GRAVITY = 1250.0` to `600.0`.
-2. Faster Ki: in `ninja/powers.py`, change `KI_PER_CUT = 4` to `20`.
+2. Faster Power charging: in `ninja/powers.py`, change `KI_PER_CUT = 4` to `20`.
 3. A tougher boss: in `ninja/boss.py`, change `HP = 30` to `60`.
 4. Your own blade look: in `ninja/settings.py`, edit the colours or tool style of `"Moonlight"` in `BLADES`.
 5. A longer Fever: in `ninja/fever.py`, change `FEVER_TIME = 8.0` to `15.0`.
@@ -616,9 +616,9 @@ The project grew in steps. Each older version is kept as a git tag, so you can l
 | Tag | Version | What it is |
 |---|---|---|
 | (first commit on `main`) | v1 | The original game in plain HTML, CSS and JavaScript |
-| `v2.0` | v2 | Rewritten in Python with pygame-ce: the dojo, three modes, blades, seals |
+| `v2.0` | v2 | Rewritten in Python with pygame-ce: the wooden arena, three modes, blades, seals |
 | `v3.0` | v3 | Photographic art and sound, GPU post-processing, juice splashes |
-| `v4.0` | v4 | Ninja Path mode (powers, Fever, bosses, hazards), the signed title, the Windows edition |
+| `v4.0` | v4 | Hero Path mode (powers, Fever, bosses, hazards), the signed title, the Windows edition |
 | `v4.1` | v4.1 | The web version in JavaScript is added |
 | `main` | current | Honey’s Slash & Splash: both editions together, with every blade available from the start |
 
