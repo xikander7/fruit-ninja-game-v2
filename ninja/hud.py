@@ -13,6 +13,7 @@ from .settings import W, H, WASHI, GOLD, HANKO, MUTED
 
 
 def lerp_rgb(a, b, t):
+    """Blend colour a into colour b: t=0 gives a, t=1 gives b, 0.5 is halfway. ("lerp" = linear interpolation.)"""
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
@@ -29,6 +30,7 @@ def label(surf, fonts, font, s, color, pos, anchor="center", tracking=0, shadow=
     return r
 
 
+# Caches for the small images below. Drawing them is slow, so each is built once per size/colour and then reused every frame.
 _CHEVRONS = {}
 
 
@@ -37,6 +39,7 @@ def chevron(step, color):
     opaque surface, and the UI layer is transparent)."""
     key = (step, color)
     if key not in _CHEVRONS:
+        # Draw at 4x size, then shrink: the shrinking smooths the jagged edges (supersampling).
         k = 4
         s = pygame.Surface((12 * k, 18 * k), pygame.SRCALPHA)
         pts = [((6 - 3 * step) * k, 2 * k), ((6 + 4 * step) * k, 9 * k), ((6 - 3 * step) * k, 16 * k)]
@@ -81,6 +84,8 @@ def brush_x(size, color, outline=False):
     m = pygame.Surface((d, d), pygame.SRCALPHA)
     p = d * 0.1
     for x0, y0, x1, y1, bow, wmax in ((p, p * 1.3, d - p, d - p * 0.8, 0.05, 0.17), (d - p * 1.2, p, p * 1.1, d - p * 1.1, -0.04, 0.14)):
+        # Each stroke is a polygon built from points along a gently curved line, blunt at the start and tapering to a point.
+        # (ux, uy) points along the stroke; (nx, ny) points sideways, used to push the left and right edges apart.
         L = math.hypot(x1 - x0, y1 - y0)
         ux, uy = (x1 - x0) / L, (y1 - y0) / L
         nx, ny = -uy, ux
@@ -106,6 +111,7 @@ def brush_x(size, color, outline=False):
 def draw_play_hud(play, ui):
     """`ui` is the UI layer: above the post-processing, so the camera never moves, fringes or dims it."""
     f = play.app.art.fonts
+    # Layout: score on the left, strikes or time on the right, power timers underneath. `y` tracks where the next chip goes.
     # score: left, gold, the number rolls toward the real value
     label(ui, f, f.mono12, "SCORE", MUTED, (42, 34), "midleft", tracking=4)
     sr = label(ui, f, f.score, str(round(play.shown)), GOLD, (38, 44), "topleft")
@@ -145,6 +151,7 @@ def draw_play_hud(play, ui):
         ui.blit(img, r)
         y = r.bottom + 18
     # power-up chips: what's active and how long it has left
+    # Each tuple is (seconds left, total seconds, label, colour); the bar under the label shows left / total.
     for val, total, name, col in ((play.freeze, 6.0, "FREEZE", FRUITS["freeze"].juice),
                                   (play.frenzy, 4.5, "FRENZY", FRUITS["frenzy"].juice),
                                   (play.double, 8.0, "DOUBLE ×2", FRUITS["double"].juice),
@@ -164,6 +171,7 @@ def draw_play_hud(play, ui):
     draw_boss_bar(play, ui)
 
 
+# Width in pixels of the Ki bar. Ki is the energy meter that fills as you slice and powers up special moves.
 KI_W = 180
 
 
@@ -176,6 +184,7 @@ def draw_ki(play, ui):
     f, app = play.app.art.fonts, play.app
     x, y = 42, H - 40
     full = ki.full and play.power is None
+    # A slow 0-to-1 wobble over time that makes the full Ki bar breathe.
     pulse = 0.5 + 0.5 * math.sin(play.w.t * 4.5)
     label(ui, f, f.mono12, "KI", GOLD if full else MUTED, (x, y - 14), "midleft", tracking=4)
     if full:
@@ -250,6 +259,7 @@ def draw_grades(play, screen):
         screen.fill(lerp_rgb((255, 255, 255), FEVER_GRADE, k), special_flags=pygame.BLEND_RGB_MULT)
 
 
+# Width in pixels of the boss health bar.
 BOSS_W = 360
 
 

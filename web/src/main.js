@@ -13,15 +13,21 @@ function setProgress(f) {
   $("bar").style.width = `${Math.round(Math.min(1, f) * 100)}%`;
 }
 
+let linesTimer = 0;
+const LINES = ["Sharpening the blade…", "Picking the ripest fruit…", "Squeezing the juice…", "Warming up the dojo…"];
+
 async function boot() {
   const art = new Art();
   const audio = new Audio();
+  let line = 0;
+  linesTimer = setInterval(() => { $("status").textContent = LINES[++line % LINES.length]; }, 1800);
   let a = 0, b = 0;
   const update = () => setProgress(0.7 * a + 0.3 * b);
   await Promise.all([
     art.load(BASE, (d, t) => { a = d / t; update(); }),
     audio.load(BASE, (d, t) => { b = d / t; update(); }),
   ]);
+  clearInterval(linesTimer);
   setProgress(1);
   $("status").textContent = "";
   $("buttons").hidden = false;
@@ -56,6 +62,7 @@ async function boot() {
 }
 
 boot().catch((err) => {
+  clearInterval(linesTimer);
   $("status").textContent = "Could not load the game (" + err.message + "). Check your connection and try again.";
   $("track").hidden = true;
   $("retry").hidden = false;

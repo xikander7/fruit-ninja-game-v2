@@ -2,7 +2,7 @@
 
     python tools/build_web_js.py
 
-Copies the sprites, fonts and kanji stencils the browser needs, and converts the sounds: 16-bit mono, 22.05 kHz,
+Copies the sprites, boot screen art, fonts and kanji stencils the browser needs, and converts the sounds: 16-bit mono, 22.05 kHz,
 resampled with a proper low-pass (an FFT cut at 10 kHz) so nothing above the new Nyquist frequency folds back as
 hiss. That cuts the sounds from 43 MB to about 9 MB. Writes web/assets/audio/manifest.json, the list of sound files
 per group, which web/src/audio.js loads.
@@ -61,7 +61,7 @@ def size_of(folder):
 def main():
     if OUT.exists():
         shutil.rmtree(OUT)
-    for sub in ("sprites", "glyphs"):  # never assets/raw: the source art is git-ignored and never ships
+    for sub in ("sprites", "glyphs", "boot"):  # never assets/raw: the source art is git-ignored and never ships
         shutil.copytree(SRC / sub, OUT / sub)
     (OUT / "fonts").mkdir(parents=True)
     for f in (SRC / "fonts").iterdir():

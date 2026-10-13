@@ -156,7 +156,7 @@ class Layers(unittest.TestCase):
 
 
 class TitleIntro(unittest.TestCase):
-    """Task 10: the menu opens with "Hanifa, the Fruit Ninja" signed in watermelon juice."""
+    """Task 10: the menu opens with "Slash & Splash" signed in watermelon juice."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -169,9 +169,9 @@ class TitleIntro(unittest.TestCase):
 
     def test_title_strings(self):
         from ninja import settings
-        self.assertEqual(settings.TITLE, "Hanifa")
+        self.assertEqual(settings.TITLE, "Slash & Splash")
         self.assertEqual(settings.SUBTITLE, "THE FRUIT NINJA")
-        self.assertEqual(pygame.display.get_caption()[0], "Hanifa · The Fruit Ninja")
+        self.assertEqual(pygame.display.get_caption()[0], "Slash & Splash · The Fruit Ninja")
 
     def test_intro_settles_within_two_seconds(self):
         m = game.Menu(self.app)

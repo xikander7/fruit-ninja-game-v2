@@ -1,6 +1,6 @@
 """Build the Windows edition: a self-contained folder with FruitNinjaNightDojo.exe, zipped for sharing.
 
-    pip install -r requirements-dev.txt
+    pip install -r requirements.txt
     python tools/build_windows.py
 
 Output: dist/FruitNinjaNightDojo/ (double-click the .exe, no Python needed) and dist/FruitNinjaNightDojo-windows.zip.

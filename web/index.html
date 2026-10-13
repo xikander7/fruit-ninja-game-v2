@@ -3,48 +3,303 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0a0808">
+<meta name="theme-color" content="#14080d">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Hanifa, the Fruit Ninja</title>
+<meta name="description" content="Slash & Splash: swipe across fruit to slice it. Play it in your browser, on a computer or a phone.">
+<title>Slash &amp; Splash</title>
 <link rel="icon" href="favicon.png">
+<link rel="preload" href="assets/fonts/CormorantSC-Bold.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="assets/fonts/BarlowCondensed-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
 <style>
-  html, body { margin: 0; height: 100%; background: #0a0808; overflow: hidden; overscroll-behavior: none; }
-  body { position: fixed; inset: 0; color: #e2b65c; font-family: Georgia, "Times New Roman", serif;
+  @font-face { font-family: "Cormorant SC"; font-weight: 700; font-display: swap; src: url(assets/fonts/CormorantSC-Bold.ttf) format("truetype"); }
+  @font-face { font-family: "Barlow Condensed"; font-weight: 600; font-display: swap; src: url(assets/fonts/BarlowCondensed-SemiBold.ttf) format("truetype"); }
+
+  :root {
+    --ink: #0a0808; --cream: #fff3dc; --muted: #c9b8a6; --gold: #ffd56b;
+    --pink: #ff2d7a; --red: #ff2d55; --orange: #ff8a1f; --lime: #86d33d; --violet: #8b3dff;
+    --display: "Cormorant SC", Georgia, "Times New Roman", serif;
+    --ui: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  }
+  html, body { margin: 0; height: 100%; background: var(--ink); overflow: hidden; overscroll-behavior: none; }
+  body { position: fixed; inset: 0; color: var(--gold); font-family: var(--display);
          -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
   #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-  #game { display: block; touch-action: none; cursor: none; background: #0a0808; }
-  #boot { position: fixed; inset: 0; z-index: 10; background: #0a0808; display: flex; flex-direction: column;
-          align-items: center; justify-content: center; gap: 22px; text-align: center; transition: opacity .4s; }
-  #boot.gone { opacity: 0; pointer-events: none; }
-  #boot h1 { margin: 0; font-weight: 700; font-size: clamp(34px, 7vw, 72px); letter-spacing: .04em; color: #ece4d2; }
-  #boot p { margin: 0; font-size: clamp(11px, 2vw, 14px); letter-spacing: .5em; text-indent: .5em; color: #e2b65c; }
-  #track { width: min(320px, 60vw); height: 2px; background: rgba(236, 228, 210, .18); }
-  #bar { width: 0; height: 100%; background: #e2b65c; transition: width .15s; }
-  #status { min-height: 1.2em; margin: 0; font-size: 14px; letter-spacing: .08em; color: #968a78; }
-  #buttons { display: flex; flex-direction: column; gap: 12px; align-items: center; }
-  #buttons[hidden], #retry[hidden], #track[hidden] { display: none; }
-  button { font: 22px Georgia, "Times New Roman", serif; letter-spacing: .12em; color: #e2b65c; background: #0a0808;
-           border: 1px solid #e2b65c; padding: 14px 40px; min-width: 240px; cursor: pointer; }
-  button:hover, button:focus-visible { background: #e2b65c; color: #0a0808; outline: none; }
-  #fs { font-size: 15px; padding: 10px 28px; border-color: rgba(226, 182, 92, .45); }
+  #game { display: block; touch-action: none; cursor: none; background: var(--ink); }
   #game.turned { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(90deg); }
+
+  /* ---- the boot screen ---- */
+  #boot { position: fixed; inset: 0; z-index: 10; overflow: hidden; touch-action: none;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+          box-sizing: border-box; text-align: center; transition: opacity .45s;
+          background:
+            radial-gradient(60vmax 50vmax at 6% 4%, rgba(255, 45, 122, .6), transparent 62%),
+            radial-gradient(55vmax 45vmax at 98% 10%, rgba(255, 138, 31, .55), transparent 62%),
+            radial-gradient(60vmax 50vmax at 88% 100%, rgba(134, 211, 61, .42), transparent 62%),
+            radial-gradient(70vmax 60vmax at 4% 100%, rgba(139, 61, 255, .5), transparent 62%),
+            linear-gradient(rgba(14, 6, 10, .5), rgba(14, 6, 10, .72)),
+            url(assets/sprites/background.jpg) center / cover no-repeat var(--ink); }
+  #boot.gone { opacity: 0; pointer-events: none; }
+
+  .layer { position: absolute; inset: 0; pointer-events: none; transition: transform .6s cubic-bezier(.2, .7, .2, 1); }
+  #back { transform: translate3d(calc(var(--px, 0) * 10px), calc(var(--py, 0) * 8px), 0); }
+  #mid { transform: translate3d(calc(var(--px, 0) * 26px), calc(var(--py, 0) * 18px), 0); }
+  #front { transform: translate3d(calc(var(--px, 0) * 64px), calc(var(--py, 0) * 44px), 0); z-index: 6; }
+  .f { position: absolute; translate: -50% -50%; }
+  .fi { animation: drift var(--d, 7s) ease-in-out var(--o, 0s) infinite alternate; }
+  .f img { display: block; width: 100%; height: auto; -webkit-user-drag: none; }
+  #back .f { opacity: .75; }
+  #back img { filter: brightness(.7) saturate(1.1) blur(1.4px); }
+  #mid img { filter: drop-shadow(0 16px 14px rgba(0, 0, 0, .55)); }
+  #front img { filter: blur(7px) saturate(1.15); }
+  .f { transition: opacity .5s, scale .5s; }
+  .f.cut { opacity: 0; scale: .7; transition: none; }
+  @keyframes drift {
+    from { transform: translateY(-1.2vmin) rotate(calc(var(--r, 0deg) - 4deg)); }
+    to { transform: translateY(1.2vmin) rotate(calc(var(--r, 0deg) + 4deg)); }
+  }
+  .half { position: fixed; z-index: 5; pointer-events: none; will-change: transform;
+          filter: drop-shadow(0 12px 10px rgba(0, 0, 0, .5)); }
+  .juice { position: fixed; z-index: 4; pointer-events: none; translate: -50% -50%; aspect-ratio: 1.1;
+           background: var(--c); -webkit-mask: url(assets/boot/splash.webp) center / contain no-repeat; mask: url(assets/boot/splash.webp) center / contain no-repeat; }
+  .juice::after { content: ""; position: absolute; inset: 0; mix-blend-mode: soft-light;
+                  background: url(assets/boot/splash.webp) center / contain no-repeat; }
+  #trail { position: fixed; inset: 0; z-index: 8; pointer-events: none; }
+
+  /* ---- title ---- */
+  #hero { position: relative; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: clamp(10px, 2.2vh, 22px); width: 100%; }
+  #pop { position: absolute; left: 50%; top: 30%; width: min(125vmin, 920px); translate: -50% -50%; opacity: 0; z-index: -1;
+         --c: var(--pink); pointer-events: none; }
+  #boot.ready #pop { animation: pop 1.1s cubic-bezier(.2, .8, .2, 1) forwards; }
+  @keyframes pop { 0% { opacity: 0; scale: .5; } 35% { opacity: .85; } 100% { opacity: .4; scale: 1.02; } }
+  #title { position: relative; margin: 0; font-weight: 700; font-size: clamp(52px, 8.4vw, 160px); line-height: .95; letter-spacing: .02em;
+           color: var(--cream); white-space: nowrap;
+           text-shadow: 0 .03em 0 #d4143a, 0 .06em 0 #8f0c28, 0 .09em 0 #5a0719, 0 .2em .25em rgba(0, 0, 0, .55); }
+  #title .t { display: inline-block; transform: skewX(-8deg); }
+  #title .t1 { animation: fromL .9s cubic-bezier(.2, .8, .2, 1) both; }
+  #title .t2 { animation: fromR .9s cubic-bezier(.2, .8, .2, 1) both; }
+  #title i { font-style: italic; color: #ff5c8a; text-shadow: 0 .03em 0 #b3124a, 0 .06em 0 #6e0a30, 0 .2em .25em rgba(0, 0, 0, .55); }
+  @keyframes fromL { from { opacity: 0; transform: translateX(-12vw) skewX(-8deg); } to { opacity: 1; transform: skewX(-8deg); } }
+  @keyframes fromR { from { opacity: 0; transform: translateX(12vw) skewX(-8deg); } to { opacity: 1; transform: skewX(-8deg); } }
+  #cut { position: absolute; left: -4%; right: -4%; top: 50%; height: .045em; font-size: inherit; pointer-events: none; opacity: 0;
+         background: linear-gradient(90deg, transparent, #fff 18%, #fff 82%, transparent); transform: rotate(-9deg) scaleX(0); }
+  #title.sweep #cut { animation: slash .7s cubic-bezier(.3, .7, .2, 1); }
+  @keyframes slash { 0% { opacity: 1; transform: rotate(-9deg) scaleX(0); } 45% { opacity: 1; transform: rotate(-9deg) scaleX(1); } 100% { opacity: 0; transform: rotate(-9deg) scaleX(1.08); } }
+  #swash { width: min(62%, 620px); height: clamp(7px, 1.1vmin, 12px); margin-top: -.5vh; background: linear-gradient(90deg, var(--lime), var(--gold) 30%, var(--orange) 55%, var(--red) 80%, var(--pink));
+           clip-path: polygon(0 55%, 8% 20%, 60% 0, 100% 45%, 62% 78%, 10% 100%); transform: scaleX(0); transform-origin: left; animation: swash .7s .8s cubic-bezier(.2, .8, .2, 1) forwards; }
+  @keyframes swash { to { transform: scaleX(1); } }
+  #tag { margin: 0; font-family: var(--ui); font-weight: 600; font-size: clamp(14px, 2vw, 22px); letter-spacing: .5em; text-indent: .5em; color: var(--gold);
+         animation: rise .7s 1.05s both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  /* ---- progress and buttons ---- */
+  #slot { display: grid; justify-items: center; align-items: start; min-height: 128px; margin-top: clamp(4px, 1.5vh, 16px); }
+  #slot > * { grid-area: 1 / 1; }
+  #loader { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #boot.ready #loader { display: none; }
+  #track { --tw: min(440px, 72vw); width: var(--tw); height: 8px; border-radius: 8px; background: rgba(255, 243, 220, .16); overflow: hidden; margin-top: clamp(8px, 2vh, 20px); animation: rise .7s 1.2s both; }
+  #bar { width: 0; height: 100%; overflow: hidden; border-radius: 8px; transition: width .2s; }
+  #bar::after { content: ""; display: block; width: var(--tw); height: 100%; background: linear-gradient(90deg, var(--lime), var(--gold) 30%, var(--orange) 55%, var(--red) 80%, var(--pink)); }
+  #status { min-height: 1.3em; margin: 0; font-family: var(--ui); font-weight: 600; font-size: 17px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #buttons { display: flex; flex-direction: column; gap: 14px; align-items: center; animation: rise .6s both; }
+  #buttons[hidden], #retry[hidden], #track[hidden] { display: none; }
+  button { font-family: var(--ui); font-weight: 600; text-transform: uppercase; cursor: pointer; border: 0; color: var(--cream); -webkit-appearance: none; appearance: none; }
+  #play, #retry { font-size: clamp(26px, 4vw, 34px); letter-spacing: .16em; text-indent: .16em; min-width: min(300px, 78vw); min-height: 60px; padding: 14px 54px; border-radius: 999px;
+                  background: linear-gradient(135deg, var(--pink), var(--red) 45%, var(--orange));
+                  box-shadow: 0 6px 0 #8d0f33, 0 16px 26px rgba(0, 0, 0, .5); transition: transform .12s, box-shadow .12s, filter .2s; animation: breathe 2.6s ease-in-out infinite; }
+  #play:hover, #play:focus-visible { filter: brightness(1.12) saturate(1.1); outline: none; }
+  #play:active, #retry:active { transform: translateY(5px); box-shadow: 0 1px 0 #8d0f33, 0 6px 12px rgba(0, 0, 0, .5); animation: none; }
+  @keyframes breathe { 50% { transform: scale(1.035); } }
+  #fs { font-size: 18px; letter-spacing: .18em; text-indent: .18em; min-height: 44px; padding: 10px 30px; border-radius: 999px; background: rgba(10, 8, 8, .35);
+        box-shadow: inset 0 0 0 1.5px rgba(255, 243, 220, .45); transition: background .2s, box-shadow .2s; }
+  #fs:hover, #fs:focus-visible { background: rgba(255, 243, 220, .16); box-shadow: inset 0 0 0 1.5px var(--cream); outline: none; }
+
+  /* a phone held upright, or any narrow window: the name stacks on two lines */
+  @media (max-aspect-ratio: 1/1), (max-width: 700px) {
+    #title { font-size: min(21vw, 15vh); white-space: normal; }
+    #title .t { display: block; }
+    #title .t1 { margin-bottom: .04em; }
+    #swash { width: min(70%, 380px); }
+    #tag { letter-spacing: .36em; text-indent: .36em; }
+  }
+  @media (max-height: 460px) and (min-aspect-ratio: 1/1) {
+    #title { font-size: min(11vw, 26vh); }
+    #tag, #swash { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fi, #play, #title .t, #swash, #tag, #track, #buttons { animation: none; }
+    #swash { transform: none; }
+    #boot.ready #pop { animation: none; opacity: .4; }
+  }
 </style>
 </head>
 <body>
 <div id="stage"><canvas id="game" width="1280" height="720"></canvas></div>
 <div id="boot">
-  <h1>Hanifa</h1>
-  <p>THE FRUIT NINJA</p>
-  <div id="track"><div id="bar"></div></div>
-  <p id="status">Sharpening the blade…</p>
-  <button id="retry" hidden>Try again</button>
-  <div id="buttons" hidden>
-    <button id="play">Play</button>
-    <button id="fs">Play fullscreen</button>
+  <div class="layer" id="back"></div>
+  <div class="layer" id="mid"></div>
+  <div id="hero">
+    <div class="juice" id="pop"></div>
+    <h1 id="title"><span class="t t1">Slash</span> <span class="t t2"><i>&amp;</i> Splash</span><span id="cut"></span></h1>
+    <div id="swash"></div>
+    <p id="tag">THE FRUIT NINJA</p>
+    <div id="slot">
+      <div id="loader">
+        <div id="track"><div id="bar"></div></div>
+        <p id="status">Sharpening the blade…</p>
+        <button id="retry" hidden>Try again</button>
+      </div>
+      <div id="buttons" hidden>
+        <button id="play">Play</button>
+        <button id="fs">Play fullscreen</button>
+      </div>
+    </div>
   </div>
+  <div class="layer" id="front"></div>
+  <canvas id="trail"></canvas>
 </div>
+<script>
+// Boot screen decoration: three planes of fruit that drift and shift with the pointer, and a blade you can swipe
+// through them. It never touches the game; main.js only needs the ids above.
+(() => {
+  const boot = document.getElementById("boot"), title = document.getElementById("title");
+  const layers = { back: document.getElementById("back"), mid: document.getElementById("mid"), front: document.getElementById("front") };
+  const JUICE = { watermelon: "#ff2d55", orange: "#ff8a1f", kiwi: "#8fd14f", dragonfruit: "#ff3cac", apple: "#f7e7a0",
+                  strawberry: "#ff2740", lemon: "#ffe030", peach: "#ffa45c", banana: "#ffe9a0" };
+  // plane, fruit, x %, y %, width in vmin, rotation. Chosen so the middle of the screen stays clear for the name.
+  const WIDE = [
+    ["back", "apple", 7, 36, 9, -15], ["back", "peach", 30, 91, 9, 10], ["back", "lemon", 91, 34, 9, 25], ["back", "strawberry", 58, 8, 7, -20],
+    ["mid", "watermelon", 14, 68, 31, -12], ["mid", "orange", 87, 68, 24, 15], ["mid", "dragonfruit", 14, 16, 16, -22],
+    ["mid", "banana", 81, 18, 14, 28], ["mid", "kiwi", 68, 86, 14, 18],
+    ["front", "lemon", -2, 98, 30, 20], ["front", "strawberry", 103, 4, 24, -30],
+  ];
+  const TALL = [
+    ["back", "apple", 10, 38, 15, -15], ["back", "peach", 90, 40, 15, 12], ["back", "lemon", 42, 95, 17, 20], ["back", "strawberry", 62, 5, 12, -20],
+    ["mid", "watermelon", 22, 14, 35, -12], ["mid", "orange", 80, 22, 27, 15], ["mid", "dragonfruit", 20, 84, 22, -22],
+    ["mid", "banana", 82, 80, 17, 28], ["mid", "kiwi", 52, 62, 0, 0],
+    ["front", "lemon", -4, 100, 40, 20], ["front", "strawberry", 104, 0, 34, -30],
+  ].filter((r) => r[4]);
+  let fruit = [];
+
+  function build() {
+    for (const l of Object.values(layers)) l.textContent = "";
+    fruit = [];
+    const tall = innerHeight > innerWidth * 1.05;
+    for (const [plane, name, x, y, w, r] of tall ? TALL : WIDE) {
+      const f = document.createElement("div");
+      f.className = "f";
+      f.style.cssText = `left:${x}%;top:${y}%;width:${w}vmin;--r:${r}deg;--d:${(5 + Math.random() * 4).toFixed(1)}s;--o:-${(Math.random() * 6).toFixed(1)}s`;
+      const i = document.createElement("div");
+      i.className = "fi";
+      const img = new Image();
+      img.alt = ""; img.draggable = false; img.decoding = "async";
+      img.onerror = () => f.remove();
+      img.src = `assets/boot/${name}.webp`;
+      i.append(img); f.append(i); layers[plane].append(f);
+      if (plane !== "front") fruit.push({ f, img, name, live: true });
+    }
+  }
+
+  // ---- slicing ----
+  function hits(a, b, cx, cy, r) {
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((cx - a.x) * dx + (cy - a.y) * dy) / l2));
+    return Math.hypot(a.x + t * dx - cx, a.y + t * dy - cy) < r;
+  }
+
+  function slice(it, a, b) {
+    const box = it.img.getBoundingClientRect();
+    const cx = box.left + box.width / 2, cy = box.top + box.height / 2, size = Math.max(box.width, box.height);
+    const scale = 0.72 * box.width / (it.img.naturalWidth || box.width); // the half art is framed larger than the whole
+    it.live = false;
+    it.f.classList.add("cut");
+    setTimeout(() => { it.f.classList.remove("cut"); it.live = true; }, 3200);
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    const px = dy / len, py = -dx / len; // unit vector across the cut: the halves part along it
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    const juice = document.createElement("div");
+    juice.className = "juice";
+    juice.style.cssText = `--c:${JUICE[it.name]};left:${cx}px;top:${cy}px;width:${size * 2.8}px`;
+    boot.append(juice);
+    juice.animate([{ opacity: 0, scale: .3 }, { opacity: .95, scale: 1, offset: .25 }, { opacity: 0, scale: 1.12 }], { duration: 1100, easing: "ease-out" }).onfinish = () => juice.remove();
+    for (const s of [-1, 1]) {
+      const h = new Image();
+      h.className = "half";
+      h.onload = () => {
+        h.style.cssText = `left:${cx}px;top:${cy}px;width:${h.naturalWidth * scale}px;translate:-50% -50%`;
+        const rot = ang + (s < 0 ? 0 : 180);
+        const out = size * 0.55 * s, fall = innerHeight * 0.55;
+        h.animate([
+          { transform: `rotate(${rot}deg)`, opacity: 1 },
+          { transform: `translate(${px * out}px, ${py * out - size * .25}px) rotate(${rot + s * 50}deg)`, opacity: 1, offset: .35 },
+          { transform: `translate(${px * out * 1.8}px, ${py * out * 1.8 + fall}px) rotate(${rot + s * 140}deg)`, opacity: 0 },
+        ], { duration: 1300, easing: "cubic-bezier(.3, .1, .6, 1)" }).onfinish = () => h.remove();
+      };
+      h.src = `assets/boot/${it.name}_half.webp`;
+      boot.append(h);
+    }
+  }
+
+  // ---- the swipe trail ----
+  const cv = document.getElementById("trail"), g = cv.getContext("2d");
+  let pts = [], raf = 0;
+  function fit() {
+    const k = Math.min(2, devicePixelRatio || 1);
+    cv.width = innerWidth * k; cv.height = innerHeight * k;
+    g.setTransform(k, 0, 0, k, 0, 0);
+  }
+  function paint(now) {
+    pts = pts.filter((p) => now - p.t < 260);
+    g.clearRect(0, 0, innerWidth, innerHeight);
+    for (let i = 1; i < pts.length; i++) {
+      const life = 1 - (now - pts[i].t) / 260;
+      for (const [w, col] of [[14, `rgba(255, 45, 122, ${life * .35})`], [5, `rgba(255, 255, 255, ${life})`]]) {
+        g.strokeStyle = col; g.lineWidth = w * life; g.lineCap = "round";
+        g.beginPath(); g.moveTo(pts[i - 1].x, pts[i - 1].y); g.lineTo(pts[i].x, pts[i].y); g.stroke();
+      }
+    }
+    raf = pts.length ? requestAnimationFrame(paint) : 0;
+  }
+
+  // A mouse slices as it moves; a finger or pen only while it is down (move events only come then anyway).
+  let prev = null;
+  boot.addEventListener("pointerup", () => { prev = null; });
+  boot.addEventListener("pointercancel", () => { prev = null; });
+  boot.addEventListener("pointermove", (e) => {
+    const now = performance.now(), p = { x: e.clientX, y: e.clientY, t: now };
+    if (e.pointerType === "mouse") {
+      boot.style.setProperty("--px", (-(p.x / innerWidth - .5) * 2).toFixed(3));
+      boot.style.setProperty("--py", (-(p.y / innerHeight - .5) * 2).toFixed(3));
+    }
+    if (prev && now - prev.t < 80) {
+      pts.push(p);
+      if (!raf) raf = requestAnimationFrame(paint);
+      const speed = Math.hypot(p.x - prev.x, p.y - prev.y) / Math.max(1, now - prev.t) * 1000;
+      if (speed > 300) for (const it of fruit) {
+        if (!it.live) continue;
+        const r = it.img.getBoundingClientRect();
+        if (hits(prev, p, r.left + r.width / 2, r.top + r.height / 2, Math.max(r.width, r.height) * .42)) slice(it, prev, p);
+      }
+    }
+    prev = p;
+  });
+
+  // ---- start up ----
+  new MutationObserver(() => { // the game is loaded: splash behind the name, and the blade crosses it once more
+    if (!document.getElementById("buttons").hidden) {
+      boot.classList.add("ready");
+      title.classList.remove("sweep"); void title.offsetWidth; title.classList.add("sweep");
+    }
+  }).observe(document.getElementById("buttons"), { attributes: true, attributeFilter: ["hidden"] });
+  setTimeout(() => title.classList.add("sweep"), 700);
+  setInterval(() => { if (!boot.classList.contains("gone")) { title.classList.remove("sweep"); void title.offsetWidth; title.classList.add("sweep"); } }, 6500);
+  let timer = 0;
+  addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(() => { fit(); build(); }, 150); });
+  fit(); build();
+})();
+</script>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

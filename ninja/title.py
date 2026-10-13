@@ -1,4 +1,4 @@
-"""The menu's title intro: a watermelon is tossed up, cut at its apex, and "Hanifa" is signed in its juice.
+"""The menu's title intro: a watermelon is tossed up, cut at its apex, and "Slash & Splash" is signed in its juice.
 
 Plays once per Menu entry (~1.6 s), skippable; afterwards the name holds with a slow light sweep now and then.
 The name is art on the wall (drawn into the world layer, so the juice droplets fly over it and the post-fx grade
@@ -12,6 +12,8 @@ from .fx import shade, stamp_scale
 from .hud import label
 from .settings import W, H, WASHI, GOLD, HANKO, BLADES, TITLE, SUBTITLE
 
+# Timeline of the intro, in seconds from its start (each pair is a start time and a duration), plus layout numbers.
+# Everything in the animation is driven by comparing the running clock `t` against these.
 TOSS = 0.42  # s: the melon rises from below the screen to its apex, where the blade meets it
 SLASH = 0.32  # s the blade streak takes to draw across and burn out
 REVEAL_AT, REVEAL = 0.5, 0.5  # the name is signed left to right
@@ -82,12 +84,15 @@ def feather(w, h):
 
 
 def ease_out(u, p=3):
+    """Turn a 0-to-1 progress value into one that starts fast and slows to a stop (higher p = more slowing). Makes motion feel natural."""
     u = min(1.0, max(0.0, u))
     return 1 - (1 - u) ** p
 
 
 class TitleIntro:
+    """The scripted title animation: toss a melon, slice it, then "sign" the game name in its juice."""
     def __init__(self, app, world):
+        """Pre-render every image the animation needs (the name in ink, a wet-juice copy, shadow, glint, seal) so drawing each frame is cheap."""
         self.app, self.w = app, world
         self.t = 0.0
         self.cut = False
@@ -98,6 +103,7 @@ class TitleIntro:
         self.ink = slanted(font.render(TITLE, True, WASHI).convert_alpha())
         red = slanted(font.render(TITLE, True, self.juice).convert_alpha())
         wet = pygame.Surface((red.get_width() + 12, red.get_height() + 12), pygame.SRCALPHA)
+        # Stamp the red text several times, nudged in each direction, to fatten it into a puddle of juice before blurring.
         for dx, dy in ((0, 0), (3, 0), (-3, 0), (0, 3), (0, -3), (2, 2), (-2, 2), (2, -2), (-2, -2)):
             wet.blit(red, (6 + dx, 6 + dy))
         self.wet = pygame.transform.gaussian_blur(wet, 2)
@@ -125,6 +131,7 @@ class TitleIntro:
         return self.t >= DONE
 
     def skip(self):
+        """Jump straight to the finished state when the player presses a key or clicks."""
         if self.done:
             return
         self.t = DONE
@@ -143,6 +150,7 @@ class TitleIntro:
         b.vx, b.vy = 0.0, -2 * (y0 - APEX) / TOSS * (1 - u)  # d/dt of the curve: drives the motion blur
 
     def update(self, dt):
+        """Advance the animation clock and fire its one-off events: the cut when the melon peaks, and the seal stamp near the end."""
         self.t += dt
         w = self.w
         if not self.cut and self.melon.alive:
@@ -172,9 +180,11 @@ class TitleIntro:
 
     @staticmethod
     def slash_line():
+        """The two end points of the scripted blade cut across the melon."""
         return W / 2 - 300, APEX + 120, W / 2 + 300, APEX - 120
 
     def seal_pos(self):
+        """Where the red seal stamp sits, at the end of the name."""
         return self.rect.right + 4, self.rect.bottom - 30
 
     # ---------------- drawing ----------------

@@ -9,6 +9,7 @@ import random
 from .art import REGULAR, WEIGHTS
 from .settings import W, H
 
+# Fever tuning. Slice fruit without a miss to build a chain; every CHAIN_STEP cuts raises the score multiplier.
 CHAIN_STEP = 10  # cuts per multiplier step
 MAX_MULT = 5  # reaching it starts Fever
 FEVER_TIME = 8.0
@@ -17,7 +18,9 @@ GRADE = (255, 236, 200)  # warm gold multiply over the world during Fever
 
 
 class Fever:
+    """The state of the combo chain: how many cuts in a row, the current multiplier, and whether Fever is running."""
     def __init__(self):
+        """Start with no chain and Fever off."""
         self.chain = 0
         self.active = False
         self.t = 0.0  # Fever time left
@@ -26,9 +29,11 @@ class Fever:
 
     @property
     def mult(self):
+        """The current score multiplier (1 up to MAX_MULT; always MAX_MULT during Fever)."""
         return MAX_MULT if self.active else min(MAX_MULT, 1 + self.chain // CHAIN_STEP)
 
     def points(self, base):
+        """Apply the multiplier to a base score."""
         return base * self.mult
 
     def cut(self):
@@ -72,9 +77,11 @@ class Fever:
         return min(1.0, (FEVER_TIME - self.t) / 0.4, self.t / 0.6) if self.active else 0.0
 
 
+# These small functions are called by the Play screen (game.py) at the right moments, so Fever stays out of its way.
 # ---------------- Play hooks ----------------
 
 def on_cut(play):
+    """Called on every cut: grow the chain and celebrate if that cut started Fever."""
     f = play.fever
     if f is not None and f.cut():
         play.w.stamp("熱", "Fever", W / 2, H * 0.44, 120)  # clear above a power stamp (H * 0.72), caption included
@@ -98,5 +105,6 @@ def tick_fever(play, dt):
 
 
 def fever_fx(play, p):
+    """Boost the picture's colour saturation while Fever is active (p is the dict of screen-effect settings)."""
     if play.fever is not None and play.fever.active:
         p["saturation"] *= 1.15

@@ -1,2 +1,0 @@
-numpy
-pyinstaller==6.22.3

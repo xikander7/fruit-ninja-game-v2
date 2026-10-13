@@ -1,7 +1,7 @@
 // The save file: the same JSON shape as the Python game's ~/.fruit_ninja_dojo.json (ninja/game.py load_save).
 import { MODES, BLADES } from "../config.js";
 
-export const SAVE_KEY = "hanifa-fruit-ninja-save";
+export const SAVE_KEY = "slash-and-splash-save";
 
 export function defaultSave() {
   return { best: Object.fromEntries(Object.keys(MODES).map((m) => [m, 0])), blade: "Moonlight", muted: false, total_sliced: 0 };

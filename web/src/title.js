@@ -1,4 +1,4 @@
-// The menu's title intro: a watermelon is tossed up, cut at its apex, and "Hanifa" is signed in its juice
+// The menu's title intro: a watermelon is tossed up, cut at its apex, and "Slash & Splash" is signed in its juice
 // (ninja/title.py). Plays once per Menu entry (~1.6 s), skippable; afterwards the name holds with a slow light
 // sweep now and then. The name is art on the wall (drawn into the world layer, so the juice droplets fly over it);
 // the subtitle and the seal are UI.

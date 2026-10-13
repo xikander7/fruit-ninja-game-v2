@@ -1,2 +1,13 @@
+# Everything for the project: pip install -r requirements.txt
+
+# Needed to play the desktop game (python main.py)
 pygame-ce>=2.5
 moderngl>=5.13
+
+# Needed for the tests (python -m pytest tests)
+pytest
+
+# Needed only by the scripts in tools/ (building assets, the .exe and the web version)
+numpy
+pillow
+pyinstaller==6.22.3

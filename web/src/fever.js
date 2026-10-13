@@ -1,3 +1,6 @@
+// Fever is a bonus state you enter by chaining cuts quickly. This file is the glue between
+// the Play screen and the Fever rules: it announces Fever, drops the bonus fruit "rain",
+// and tints the picture. The actual counting lives in rules/fever.js.
 // Fever's hooks into Play (ninja/fever.py). The rules (chain, multiplier, rain timing) are in rules/fever.js.
 import { W, H } from "./config.js";
 import { uniform } from "./util.js";
@@ -27,6 +30,7 @@ export function tickFever(play, dt) {
   play.app.audio.loop("fever", f.active && play.state === "play");
 }
 
+// Screen-effect hook: while Fever is active, colours get a little more vivid.
 export function feverFx(play, p) {
   if (play.fever && play.fever.active) p.saturation *= 1.15;
 }

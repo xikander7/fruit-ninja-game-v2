@@ -1,8 +1,8 @@
-# Hanifa, the Fruit Ninja
+# Slash & Splash
 
 A fruit-slicing game. You swipe across fruit to cut it. It is set on the wooden wall of a dojo lit by a paper
 lantern, with photographic fruit, juice splashes, red hanko seals for the big moments and glowing light effects. When
-the menu opens, a watermelon is tossed up and sliced, and the name "Hanifa" is written in its juice.
+the menu opens, a watermelon is tossed up and sliced, and the name "Slash & Splash" is written in its juice.
 
 ![The menu in the browser](docs/web-menu.png)
 
@@ -277,7 +277,7 @@ the work happens in the player's browser.
 
 ### numpy
 
-numpy does fast maths on large arrays. The build tools use it to process sound files.
+numpy does fast maths on large arrays. The build tools use it to process sound files (it is listed in `requirements.txt`).
 
 ### Fonts
 
@@ -293,8 +293,7 @@ stencils in `assets/glyphs/`, made from Zen Kaku Gothic New (also OFL).
 fruit-ninja-game-v2/
 ├── README.md               This file
 ├── main.py                 Starts the desktop game (and the NINJA_SMOKE=1 self-check)
-├── requirements.txt        What the desktop game needs: pygame-ce, moderngl
-├── requirements-dev.txt    Build tools: numpy, pyinstaller
+├── requirements.txt        Python packages: pygame-ce, moderngl to play; pytest, numpy, pillow, pyinstaller to test and build
 ├── .gitignore, .gitattributes
 ├── assets/                 Shared by both versions
 ├── ninja/                  The desktop game (Python package)
@@ -321,7 +320,7 @@ fruit-ninja-game-v2/
 |---|---|
 | `settings.py` | Screen size, gravity, colours, the blades and modes tables, where the save file lives, `resource_path()` for finding files inside the `.exe` |
 | `game.py` | `App` (window and main loop) and the screens: `World`, `Menu`, `Play`, `GameOver`, `Wipe` (the cut-in-two transition). Also loading and writing the save |
-| `title.py` | The title intro: the tossed watermelon and the "Hanifa" signature |
+| `title.py` | The title intro: the tossed watermelon and the "Slash & Splash" signature |
 | `entities.py` | `Body` (a whole fruit or bomb) and `Half` (a cut half): movement and drawing |
 | `art.py` | Loads sprites and fonts, draws fallback art if a file is missing, makes the hanko seals |
 | `audio.py` | Loads sounds (or makes simple ones in code if a file is missing) and plays them |
@@ -344,10 +343,11 @@ without OpenGL), `test_art.py`, `test_audio.py`, `test_ui.py`, `test_package.py`
 | File | What it does |
 |---|---|
 | `build_sprites.py` | Turns the raw cutouts in `assets/raw` into the game sprites |
+| `build_boot_art.py` | Cuts the larger fruit and splash images used by the loading screen into `assets/boot` (needs Pillow) |
 | `build_audio.py` | Splits and trims the raw audio into game-ready WAV files |
 | `build_glyphs.py` | Renders the kanji stencils from an OFL font |
 | `build_windows.py` | Builds the Windows edition with PyInstaller |
-| `build_web_js.py` | Builds `web/assets/`: converts the sounds to 22 kHz mono, copies sprites, fonts and glyphs, writes the sound list |
+| `build_web_js.py` | Builds `web/assets/`: converts the sounds to 22 kHz mono, copies sprites, boot art, fonts and glyphs, writes the sound list |
 | `deploy_web.py` | Builds the site into `build/site` and, with `--push`, publishes it to the `gh-pages` branch |
 
 ### web/ (web game)
@@ -504,7 +504,7 @@ again" button. Sound stays locked in browsers until a tap, which is why there is
 Scores are saved as a small piece of JSON.
 
 - Desktop: in `~/.fruit_ninja_dojo.json` in your home folder.
-- Web: in the browser's local storage, under the key `hanifa-fruit-ninja-save`.
+- Web: in the browser's local storage, under the key `slash-and-splash-save`.
 
 ```json
 {
@@ -573,7 +573,7 @@ Run the tests afterwards. Some of them check these exact values on purpose.
 
 ## Build, run and publish
 
-Install the build tools once: `pip install -r requirements-dev.txt`.
+Install the packages once (this also covers the tests and build tools): `pip install -r requirements.txt`.
 
 Web version, on your computer:
 
@@ -612,7 +612,7 @@ The project grew in steps. Each older version is kept as a git tag, so you can l
 | (first commit on `main`) | v1 | The original game in plain HTML, CSS and JavaScript |
 | `v2.0` | v2 | Rewritten in Python with pygame-ce: the dojo, three modes, blades, seals |
 | `v3.0` | v3 | Photographic art and sound, GPU post-processing, juice splashes |
-| `v4.0` | v4 | Ninja Path mode (powers, Fever, bosses, hazards), the Hanifa title, the Windows edition |
+| `v4.0` | v4 | Ninja Path mode (powers, Fever, bosses, hazards), the signed title, the Windows edition |
 | `v4.1` | v4.1 | The web version in JavaScript is added |
 | `main` | v5 | The current game: both versions together, tidied up |
 

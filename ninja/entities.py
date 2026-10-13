@@ -1,3 +1,7 @@
+"""Flying objects: whole fruit/bombs thrown into the air (`Body`) and the two halves they split into (`Half`).
+
+Also small helpers for the physics, hit testing and drawing of those sprites (shadow, motion blur, fake depth).
+"""
 import math
 import random
 
@@ -6,13 +10,18 @@ import pygame
 from .art import FRUITS
 from .settings import H, GRAVITY
 
+# Motion blur tuning: above this speed, faint copies ("ghosts") are drawn behind a moving sprite.
 BLUR_SPEED = 900  # px/s: faster than this, a sprite leaves motion-blur ghosts
 GHOSTS = ((0.5, 40), (1.0, 18))  # (fraction of a frame back, alpha): a smear, not a second copy
 
 
 def seg_hits_circle(ax, ay, bx, by, cx, cy, r):
+    """Does the line segment A->B touch the circle centred at C with radius r?
+    Used to test a blade swipe against a fruit. We find the closest point on the segment to the circle's centre, then compare distances.
+    """
     dx, dy = bx - ax, by - ay
     L2 = dx * dx + dy * dy
+    # t is how far along the segment (0 = start, 1 = end) the closest point lies; clamped so we never go past the ends.
     t = 0.0 if L2 == 0 else max(0.0, min(1.0, ((cx - ax) * dx + (cy - ay) * dy) / L2))
     px, py = ax + dx * t, ay + dy * t
     return (cx - px) ** 2 + (cy - py) ** 2 <= r * r
@@ -33,6 +42,7 @@ def depth_scale(age, flight):
 
 
 def draw_shadow(surf, shadow, x, y, ang, s):
+    """Draw a soft drop shadow on the wall behind a sprite."""
     # the nearer the sprite (bigger s), the further and fainter its shadow on the wall
     k = min(1.0, max(0.0, (s - 0.9) / 0.14))
     off = 10 + 16 * k
@@ -42,6 +52,7 @@ def draw_shadow(surf, shadow, x, y, ang, s):
 
 
 def draw_sprite(surf, img, x, y, ang, s, vx, vy, dt):
+    """Draw a sprite rotated and scaled, with motion-blur ghosts trailing behind it when it moves fast."""
     im = pygame.transform.rotozoom(img, ang, s)
     if dt > 0 and vx * vx + vy * vy > BLUR_SPEED * BLUR_SPEED:
         for k, a in GHOSTS[::-1]:  # reuse the rotated image: ghosts cost a blit, not a rotozoom
@@ -52,6 +63,7 @@ def draw_sprite(surf, img, x, y, ang, s, vx, vy, dt):
 
 
 def flight_time(vy, static):
+    """How long (seconds) a thrown object takes to come back down, used to time its fake-depth swelling. None if it does not fly."""
     if static:
         return None
     return max(0.6, 2 * abs(vy) / GRAVITY)  # time to fall back to the launch height (either way up)
@@ -62,6 +74,9 @@ class Body:
     rain = False  # Fever's rain: dropping one never costs a strike or a life
 
     def __init__(self, art, kind, x, y, vx, vy, static=False):
+        """Set up a thrown object: what it is, its size and score, its starting position and velocity (vx, vy in pixels per second).
+        `static=True` means it hangs in place (e.g. a menu button) instead of flying.
+        """
         self.kind = kind
         self.bomb = kind == "bomb"
         self.hazard = "ice" if kind == "icebomb" else ""  # an ice bomb: no fruit, not a bomb either
@@ -69,6 +84,7 @@ class Body:
         self.special = "" if self.ft is None else self.ft.special
         self.r = 38 if self.ft is None else self.ft.r
         self.points = 0 if self.ft is None else self.ft.points  # what a cut scores (the golden fruit's last: more)
+        # Only the golden fruit takes several slashes (5); everything else dies in one.
         self.hp, self.hit_t = (5 if kind == "golden" else 1), -1.0  # hits it takes; when it was last hit (world time)
         # a drop costs a strike or a life only for ordinary fruit: never bombs, power-ups or the hazard specials
         self.costly = self.ft is not None and not self.special and kind not in ("golden", "chaos")
@@ -88,6 +104,9 @@ class Body:
         self.age, self.flight, self.dt = 0.0, flight_time(vy, static), 0.0
 
     def update(self, dt, g=GRAVITY):
+        """Move the fruit one step: gravity changes its vertical speed, speed changes its position, and it keeps spinning.
+        `dt` is the time since the last frame in seconds.
+        """
         if not self.static:
             self.vy += g * dt
             self.x += self.vx * dt
@@ -99,22 +118,28 @@ class Body:
         self.dt = dt
 
     def scale(self):
+        """Current size multiplier (fake depth)."""
         return depth_scale(self.age, self.flight)
 
     def gone(self):
+        """True once the fruit has fallen (or flown) off screen and can be deleted."""
         # moving away past either edge: gravity can be flipped, so a fruit can also leave over the top
         return not self.static and (self.vy > 0 and self.y > H + self.r * 2 or self.vy < 0 and self.y < -self.r * 2)
 
     def draw_shadow(self, surf):
+        """Draw this object's shadow."""
         draw_shadow(surf, self.shadow, self.x, self.y, self.ang, self.scale())
 
     def draw(self, surf):
+        """Draw this object."""
         vx, vy = (0, 0) if self.static else (self.vx, self.vy)
         draw_sprite(surf, self.img, self.x, self.y, self.ang, self.scale(), vx, vy, self.dt)
 
 
 class Half:
+    """One half of a sliced fruit, tumbling away under gravity."""
     def __init__(self, fruit_art, x, y, vx, vy, out_deg, parent=None):
+        """Create one half of a sliced fruit, flying off at angle `out_deg` away from the cut."""
         self.img, self.shadow = fruit_art.half, fruit_art.half_shadow
         self.x, self.y, self.vx, self.vy = x, y, vx, vy
         self.ang = out_deg - fruit_art.half_local
@@ -124,6 +149,7 @@ class Half:
         self.dt = 0.0
 
     def update(self, dt, g=GRAVITY):
+        """Move the half like a whole fruit (gravity plus spin), but it is never static."""
         self.vy += g * dt
         self.x += self.vx * dt
         self.y += self.vy * dt
@@ -132,13 +158,17 @@ class Half:
         self.dt = dt
 
     def gone(self):
+        """True once the half has dropped off screen."""
         return self.vy > 0 and self.y > H + 150 or self.vy < 0 and self.y < -150
 
     def scale(self):
+        """Current size multiplier (fake depth)."""
         return depth_scale(self.age, self.flight)
 
     def draw_shadow(self, surf):
+        """Draw this half's shadow."""
         draw_shadow(surf, self.shadow, self.x, self.y, self.ang, self.scale())
 
     def draw(self, surf):
+        """Draw this half."""
         draw_sprite(surf, self.img, self.x, self.y, self.ang, self.scale(), self.vx, self.vy, self.dt)
