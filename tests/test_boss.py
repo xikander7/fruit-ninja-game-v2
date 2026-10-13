@@ -134,7 +134,7 @@ class BossInPlay(unittest.TestCase):
                 self.assertEqual(len(p.w.popups.items), pops)  # no popup per hit
             run(self.app, 4)
         self.assertEqual(boss.phase, "dead")
-        kill = p.app.art.seal("討", 140)
+        kill = p.app.art.seal("WIN", 140)
         self.assertFalse(any(s.seal is kill for s in p.w.stamps))  # not on top of the burst
         run(self.app, 30)
         seal = [s for s in p.w.stamps if s.seal is kill]

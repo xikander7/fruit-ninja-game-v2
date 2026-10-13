@@ -326,7 +326,7 @@ class BossDirector:
         self.active = Boss(play.app.art if play else None, name)
         if play is not None:
             w = play.w
-            w.stamp("鬼", self.active.title, W / 2, H * 0.8, 120)  # below the boss, clear of its rise
+            w.stamp("BOSS", self.active.title, W / 2, H * 0.8, 120)  # below the boss, clear of its rise
             w.shake.kick(0.35)
             play.app.audio.play("boss_roar")
         return self.active
@@ -437,10 +437,10 @@ def defeat(play, b):
 
 
 def seal(play, b):
-    """討 where the boss was: by now the burst has flown out past the rim and the halves have parted, so the middle is
+    """Stamp victory where the boss was: the burst and split halves have cleared the middle, which is
     the one clear spot (below it, the falling lower half crosses the seal). Stamp clamps itself on screen."""
     x, y = b.cut[:2]
-    play.w.stamp("討", "Boss down", x, y - 20, 140, bonus=b.seal)
+    play.w.stamp("WIN", "Boss down", x, y - 20, 140, bonus=b.seal)
     b.seal = None
 
 

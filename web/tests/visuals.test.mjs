@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import * as assets from "../src/assets.js";
 
 // Proves: short English seal labels receive a centered, size-bounded layout instead of relying on CJK images.
-test("English seal labels fit one to four Latin characters", () => {
+test("English seal labels fit one to five Latin characters", () => {
   assert.equal(typeof assets.latinSealLayout, "function");
-  for (const label of ["H", "GO", "TRY", "MENU"]) {
+  for (const label of ["H", "GO", "TRY", "MENU", "COMBO"]) {
     const layout = assets.latinSealLayout(label, 100);
     assert.equal(layout.text, label);
     assert.match(layout.font, /700 .*BarlowCondensed/);
-    assert.ok(layout.px >= 20 && layout.px <= 58);
+    assert.ok(layout.px >= 18 && layout.px <= 58);
     assert.equal(layout.maxWidth, 78);
     assert.deepEqual([layout.x, layout.y], [50, 52]);
   }

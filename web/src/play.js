@@ -196,9 +196,9 @@ export class Play extends Scene {
     else if (this.combo === 4) w.slow();
     this.comboPos = [b.x, b.y];
     if (b.special) {
-      // Power fruit: [which timer to start, Japanese seal symbol, caption, seconds it lasts].
-      const [name, glyph, cap, dur] = { freeze: ["freeze", "凍", "Freeze", 6.0], frenzy: ["frenzy", "嵐", "Frenzy", 4.5],
-        double: ["double", "倍", "Double score", 8.0] }[b.special];
+      // Power fruit: [which timer to start, English seal label, caption, seconds it lasts].
+      const [name, glyph, cap, dur] = { freeze: ["freeze", "ICE", "Freeze", 6.0], frenzy: ["frenzy", "RUSH", "Frenzy", 4.5],
+        double: ["double", "2X", "Double score", 8.0] }[b.special];
       this[name] = dur;
       w.stamp(glyph, cap, b.x, b.y, 120);
       w.particles.sparks(b.x, b.y, b.ft.juice, 50, 800);
@@ -229,7 +229,7 @@ export class Play extends Scene {
       if (this.fever) bonus = this.fever.points(bonus);
       this.addScore(bonus);
       if (this.ki) this.ki.add(KI_PER_COMBO * this.combo);
-      this.w.stamp("連", `${this.combo} fruit combo`, ...this.comboPos, 100 + Math.min(60, this.combo * 6), WASHI, `+${bonus}`);
+      this.w.stamp("COMBO", `${this.combo} fruit combo`, ...this.comboPos, 100 + Math.min(60, this.combo * 6), WASHI, `+${bonus}`);
       this.w.hitstop = Math.max(this.w.hitstop, 0.05);
       this.app.audio.play("combo");
     }
@@ -350,7 +350,7 @@ export class Play extends Scene {
         if (this.time <= 0) {
           this.time = 0;
           this.state = "ending"; this.stateT = 0;
-          w.stamp("時", "Time's up", W / 2, H / 2 - 20, 150);
+          w.stamp("TIME", "Time's up", W / 2, H / 2 - 20, 150);
           this.app.audio.play("gong");
         }
       }

@@ -9,7 +9,7 @@ import { uniform } from "./util.js";
 export function feverCut(play) {
   const f = play.fever;
   if (f && f.cut()) {
-    play.w.stamp("熱", "Fever", W / 2, H * 0.44, 120); // clear above a power stamp (H * 0.72), caption included
+    play.w.stamp("HOT", "Fever", W / 2, H * 0.44, 120); // clear above a power stamp (H * 0.72), caption included
     play.w.shake.kick(0.25);
     play.w.zoomPunch(1.02);
   }

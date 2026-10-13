@@ -92,7 +92,7 @@ function drawKi(play, ui) {
   const x = 42, y = H - 40;
   const full = ki.full && !play.power;
   const pulse = 0.5 + 0.5 * Math.sin(play.w.t * 4.5);
-  label(ui, f, f.mono12, "KI", full ? GOLD : MUTED, [x, y - 14], "midleft", 4);
+  label(ui, f, f.mono12, "POWER", full ? GOLD : MUTED, [x, y - 14], "midleft", 2);
   if (full) {
     label(ui, f, f.mono12, "Q  W  E", GOLD, [x + KI_W, y - 14], "midright", 2, true, (150 + 105 * pulse) / 255);
     for (const b of powerButtons()) {
@@ -116,7 +116,7 @@ export function drawKiGlow(play, ctx) {
 }
 
 // Power names with the kanji shown on their seal button, in Q, W, E key order.
-export const POWER_ORDER = [["timestop", "止"], ["clones", "影"], ["dragonfire", "炎"]];
+export const POWER_ORDER = [["timestop", "STOP"], ["clones", "COPY"], ["dragonfire", "FIRE"]];
 /** The three power seals beside a full Ki bar: tap one to use it. */
 export function powerButtons() {
   return POWER_ORDER.map(([name, glyph], i) => ({ name, glyph, cx: 280 + i * 64, cy: H - 48 }));

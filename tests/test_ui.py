@@ -267,11 +267,11 @@ class FontsTest(unittest.TestCase):
         """Shut pygame down."""
         pygame.quit()
 
-    # Proves: one-to-four-letter English seal labels are rendered inside the stamp's safe area.
+    # Proves: one-to-five-letter English seal labels are rendered inside the stamp's safe area.
     def test_english_seal_labels_are_cut_out_and_fit(self):
         self.assertTrue(hasattr(art, "latin_seal_text"))
         fonts = art.Fonts()
-        for text in ("H", "GO", "TRY", "MENU"):
+        for text in ("H", "GO", "TRY", "MENU", "COMBO"):
             glyph = art.latin_seal_text(fonts, text, 100)
             self.assertLessEqual(glyph.get_width(), 78)
             self.assertLessEqual(glyph.get_height(), 70)

@@ -199,7 +199,7 @@ def flip(play, on):
     w.zoom_punch(1.02)
     w.shake.kick(0.3)
     if on:
-        w.stamp("逆", "Gravity flipped", W / 2, H * 0.58, 110)  # between Fever's stamp (0.44) and the powers' (0.72)
+        w.stamp("FLIP", "Gravity flipped", W / 2, H * 0.58, 110)  # between Fever's stamp (0.44) and the powers' (0.72)
     play.app.audio.play("gong", 0.5)
 
 

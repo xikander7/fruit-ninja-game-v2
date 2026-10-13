@@ -47,12 +47,12 @@ BLADES = {
     "Gold Leaf": ((150, 100, 0), (255, 205, 70), (255, 255, 225), 0, "chakram"),
 }
 
-# The four game modes shown on the menu. "glyph" is the big kanji character on its button.
+# The four game modes shown on the menu. "glyph" is the English label on its seal.
 MODES = {
-    "classic": {"title": "Classic", "glyph": "斬", "hint": "3 strikes · bombs end it"},
-    "arcade": {"title": "Arcade", "glyph": "速", "hint": "60 seconds · power bananas"},
-    "zen": {"title": "Zen", "glyph": "禅", "hint": "90 seconds · no bombs"},
-    "path": {"title": "Hero Path", "glyph": "道", "hint": "Endless · powers · bosses"},
+    "classic": {"title": "Classic", "glyph": "C", "hint": "3 strikes · bombs end it"},
+    "arcade": {"title": "Arcade", "glyph": "A", "hint": "60 seconds · power bananas"},
+    "zen": {"title": "Zen", "glyph": "Z", "hint": "90 seconds · no bombs"},
+    "path": {"title": "Hero Path", "glyph": "H", "hint": "Endless · powers · bosses"},
 }
 # which v4 systems each mode runs; every hook is a no-op when its flag is off
 MODE_FEATURES = {"classic": set(), "zen": set(), "arcade": {"powers", "fever"}, "path": {"powers", "fever", "boss", "hazards"}}

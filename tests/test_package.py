@@ -60,28 +60,18 @@ class KanjiStencils(unittest.TestCase):
         import pygame
         pygame.quit()
 
-    # Proves: every kanji character in the code has a PNG stencil (run tools/build_glyphs.py if this fails).
-    def test_every_kanji_in_the_game_has_a_stencil(self):
-        import re
-        chars = set()
-        for f in (settings.REPO_ROOT / "ninja").glob("*.py"):
-            chars |= set(re.findall(r"[㐀-鿿]", f.read_text(encoding="utf-8")))
-        self.assertGreater(len(chars), 10)
-        for c in chars:
-            self.assertTrue(settings.resource_path("assets", "glyphs", f"{ord(c):x}.png").is_file(), c)
-
-    # Proves: with no Japanese system font, the seal is drawn from the stencil, with the character cut out of the red.
-    def test_seal_uses_the_stencil_without_a_system_font(self):
+    # Proves: the English-only game can build a seal without a CJK font or legacy stencil asset.
+    def test_english_seal_does_not_use_the_legacy_glyph_path(self):
         from ninja import art
-        old = art._system_kanji
-        art._system_kanji = False
+        old = art.kanji
+        art.kanji = lambda *_args, **_kwargs: self.fail("English seals must not request a CJK glyph")
         try:
-            g = art.kanji(art.Fonts(), "忍", 60)
-            seal = art.make_seal(art.Fonts(), "忍", 100)
+            seal = art.make_seal(art.Fonts(), "GO", 100)
         finally:
-            art._system_kanji = old
-        self.assertEqual(g.get_height(), 87)  # the 120 px stencil (174 px tall) at half size
-        self.assertLess(seal.get_at((50, 50)).a, 128)  # the glyph's strokes are cut out of the red
+            art.kanji = old
+        self.assertGreater(seal.get_bounding_rect().width, 0)
+        interior_alpha = [seal.get_at((x, y)).a for y in range(30, 71) for x in range(20, 81)]
+        self.assertLess(min(interior_alpha), 64)  # some Latin strokes are cut out of the red
 
 
 if __name__ == "__main__":

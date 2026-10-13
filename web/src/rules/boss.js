@@ -178,7 +178,7 @@ export class BossDirector {
     this.active = this.make(play ? play.app.art : null, name);
     if (play) {
       const w = play.w;
-      w.stamp("鬼", this.active.title, W / 2, H * 0.8, 120); // below the boss, clear of its rise
+      w.stamp("BOSS", this.active.title, W / 2, H * 0.8, 120); // below the boss, clear of its rise
       w.shake.kick(0.35);
       play.app.audio.play("boss_roar");
     }

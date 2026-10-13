@@ -643,9 +643,9 @@ def kanji(fonts, glyph, px):
 
 def latin_seal_text(fonts, text, size):
     """Render a short Latin label sized to fit safely inside a square seal."""
-    if not isinstance(text, str) or not re.fullmatch(r"[A-Z0-9]{1,4}", text):
+    if not isinstance(text, str) or not re.fullmatch(r"[A-Z0-9]{1,5}", text):
         return None
-    px = round(size * (0.58, 0.46, 0.34, 0.26)[len(text) - 1])
+    px = round(size * (0.58, 0.46, 0.34, 0.26, 0.20)[len(text) - 1])
     limit_w, limit_h = size * 0.78, size * 0.70
     while px >= 8:
         font = _font(fonts.NUM[0], px, fonts.NUM[1], True)

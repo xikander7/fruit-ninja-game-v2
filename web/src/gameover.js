@@ -13,14 +13,14 @@ export class GameOver extends Scene {
   constructor(app, play, snap) {
     super();
     // Timeline: COUNT_AT = seconds before counting starts, COUNT = how long the count-up takes.
-    this.COUNT_AT = 0.45; this.COUNT = 1.3; // the score counts up once the 終 seal has landed
+    this.COUNT_AT = 0.45; this.COUNT = 1.3; // the score counts up once the OVER seal has landed
     this.app = app; this.play = play;
     // A World is the fruit/particle playground; here it sits on a frosted (blurred, dimmed) snapshot of the last frame.
     this.w = new World(app, frosted(snap, [100, 92, 88]));
     this.t = 0;
     this.newBest = play.score > play.bestPrev && play.score > 0;
-    this.retry = new SliceButton(this.w, "watermelon", W * 0.38, 548, "再", "Retry", app.touch ? "" : "or press Enter", "", 72);
-    this.menu = new SliceButton(this.w, "apple", W * 0.62, 548, "戻", "Menu", app.touch ? "" : "or press Esc", "", 72);
+    this.retry = new SliceButton(this.w, "watermelon", W * 0.38, 548, "TRY", "Retry", app.touch ? "" : "or press Enter", "", 72);
+    this.menu = new SliceButton(this.w, "apple", W * 0.62, 548, "MENU", "Menu", app.touch ? "" : "or press Esc", "", 72);
     this.choice = null; this.choiceT = 0;
     // stamped tracks the seal animations: 0 none yet, 1 "Game over" seal shown, 2 "New best" seal shown.
     this.stamped = 0;
@@ -59,11 +59,11 @@ export class GameOver extends Scene {
     this.shown = this.play.score * (1 - (1 - u) ** 3); // fast at first, easing onto the final number
     if (this.stamped === 0 && this.t > 0.2) {
       this.stamped = 1;
-      this.w.stamp("終", this.play.time !== null ? "Time's up" : "Game over", W / 2, 104, 88, WASHI, null, true);
+      this.w.stamp("OVER", this.play.time !== null ? "Time's up" : "Game over", W / 2, 104, 88, WASHI, null, true);
     }
     if (this.stamped === 1 && this.newBest && this.t > this.COUNT_AT + this.COUNT) {
       this.stamped = 2;
-      this.w.stamp("極", "New best", W / 2 + 300, 280, 104, WASHI, null, true);
+      this.w.stamp("BEST", "New best", W / 2 + 300, 280, 104, WASHI, null, true);
       this.w.particles.sparks(W / 2 + 300, 280, GOLD, 60, 700);
       this.app.audio.play("power");
     }

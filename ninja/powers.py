@@ -449,7 +449,7 @@ class DragonFire(Power):
 # Lookup tables: power name to its class, keyboard key to power name, and the kanji + caption stamped on screen.
 POWERS = {"timestop": TimeStop, "clones": ShadowClones, "dragonfire": DragonFire}
 KEYS = {pygame.K_q: "timestop", pygame.K_w: "clones", pygame.K_e: "dragonfire"}
-STAMPS = {"timestop": ("止", "Time stop"), "clones": ("影", "Shadow clones"), "dragonfire": ("炎", "Dragon fire")}
+STAMPS = {"timestop": ("STOP", "Time stop"), "clones": ("COPY", "Shadow clones"), "dragonfire": ("FIRE", "Dragon fire")}
 
 
 def use_power(play, name):

@@ -36,12 +36,12 @@ export const BLADES = {
   "Gold Leaf": [[150, 100, 0], [255, 205, 70], [255, 255, 225], 0, "chakram"],
 };
 
-// The four game modes: display name, a kanji glyph for the button, and a one-line rules hint.
+// The four game modes: display name, an English seal label, and a one-line rules hint.
 export const MODES = {
-  classic: { title: "Classic", glyph: "斬", hint: "3 strikes · bombs end it" },
-  arcade: { title: "Arcade", glyph: "速", hint: "60 seconds · power bananas" },
-  zen: { title: "Zen", glyph: "禅", hint: "90 seconds · no bombs" },
-  path: { title: "Hero Path", glyph: "道", hint: "Endless · powers · bosses" },
+  classic: { title: "Classic", glyph: "C", hint: "3 strikes · bombs end it" },
+  arcade: { title: "Arcade", glyph: "A", hint: "60 seconds · power bananas" },
+  zen: { title: "Zen", glyph: "Z", hint: "90 seconds · no bombs" },
+  path: { title: "Hero Path", glyph: "H", hint: "Endless · powers · bosses" },
 };
 // which systems each mode runs; every hook is a no-op when its flag is off
 export const MODE_FEATURES = {
@@ -75,5 +75,5 @@ export const FRUITS = {
 export const REGULAR = ["watermelon", "coconut", "orange", "peach", "apple", "lemon", "kiwi", "plum", "strawberry", "banana", "dragonfruit"];
 export const WEIGHTS = [10, 6, 12, 9, 12, 9, 9, 8, 9, 6, 3];
 export const SPECIALS = ["freeze", "frenzy", "double"];
-// Radius (px) of the boss target in Ninja Path.
+// Radius (px) of the boss target in Hero Path.
 export const BOSS_R = 120;

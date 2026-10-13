@@ -9,9 +9,8 @@ import { gfx, makeCanvas, getCtx, makeShadow, tinted, blurCanvas, polygon, circl
 import { seeded, rgb, TAU, clamp } from "./util.js";
 import { netPool, retry } from "./net.js";
 
-// Unicode code points (in hex) of the kanji stencil images in glyphs/. The seal stamps cut these out of red ink.
-export const GLYPH_HEX = ["500d", "518d", "51cd", "5d50", "5f71", "5fcd", "623b", "6587", "65ac", "6642", "6975", "6b62", "708e", "71b1",
-  "767d", "7985", "7d42", "8a0e", "9006", "901f", "9023", "9053", "9b3c"];
+// The English-only build draws seal labels with fonts, so no legacy glyph stencils are loaded.
+export const GLYPH_HEX = [];
 const GLYPH_SIZE = 120; // the stencils are rendered at 120 px
 // Photo splash overlays: file name, and the direction (degrees) the liquid is flung; null = a radial "crown".
 const SPLASHES = [["burst1", null], ["burst2", 0], ["drops1", 90], ["drops2", 8]]; // file, direction the liquid is flung (deg)
@@ -195,10 +194,10 @@ export function brushX(size, color, outline = false) {
 
 // ---------------- hanko seals, ink blots ----------------
 
-/** Layout for the one-to-four-character English labels cut out of a red seal. */
+/** Layout for the one-to-five-character English labels cut out of a red seal. */
 export function latinSealLayout(label, size) {
-  if (typeof label !== "string" || !/^[A-Z0-9]{1,4}$/.test(label)) return null;
-  const scale = [0, 0.58, 0.46, 0.34, 0.26][label.length];
+  if (typeof label !== "string" || !/^[A-Z0-9]{1,5}$/.test(label)) return null;
+  const scale = [0, 0.58, 0.46, 0.34, 0.26, 0.20][label.length];
   const px = Math.round(size * scale);
   return {
     text: label, px,

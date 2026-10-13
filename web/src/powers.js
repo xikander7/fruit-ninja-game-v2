@@ -432,7 +432,7 @@ class DragonFire extends Power {
 // Lookup tables: name -> class, key -> name, name -> [seal symbol, caption].
 const POWERS = { timestop: TimeStop, clones: ShadowClones, dragonfire: DragonFire };
 export const KEYS = { q: "timestop", w: "clones", e: "dragonfire" };
-const STAMPS = { timestop: ["止", "Time stop"], clones: ["影", "Shadow clones"], dragonfire: ["炎", "Dragon fire"] };
+const STAMPS = { timestop: ["STOP", "Time stop"], clones: ["COPY", "Shadow clones"], dragonfire: ["FIRE", "Dragon fire"] };
 
 /** Start a power: only in play, unpaused, with a full meter and nothing already running. */
 export function usePower(play, name) {

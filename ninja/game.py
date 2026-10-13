@@ -662,8 +662,8 @@ class Play(Scene):
             w.slow()
         self.combo_pos = (b.x, b.y)
         if b.special:
-            name, glyph, cap, dur = {"freeze": ("freeze", "凍", "Freeze", 6.0), "frenzy": ("frenzy", "嵐", "Frenzy", 4.5),
-                                     "double": ("double", "倍", "Double score", 8.0)}[b.special]
+            name, glyph, cap, dur = {"freeze": ("freeze", "ICE", "Freeze", 6.0), "frenzy": ("frenzy", "RUSH", "Frenzy", 4.5),
+                                     "double": ("double", "2X", "Double score", 8.0)}[b.special]
             setattr(self, name, dur)
             w.stamp(glyph, cap, b.x, b.y, 120)
             w.particles.sparks(b.x, b.y, b.ft.juice, 50, 800)
@@ -689,7 +689,7 @@ class Play(Scene):
             self.add_score(bonus)
             if self.ki:
                 self.ki.add(KI_PER_COMBO * self.combo)
-            self.w.stamp("連", f"{self.combo} fruit combo", *self.combo_pos, 100 + min(60, self.combo * 6), bonus=f"+{bonus}")
+            self.w.stamp("COMBO", f"{self.combo} fruit combo", *self.combo_pos, 100 + min(60, self.combo * 6), bonus=f"+{bonus}")
             self.w.hitstop = max(self.w.hitstop, 0.05)
             self.app.audio.play("combo")
         self.stats["best_combo"] = max(self.stats["best_combo"], self.combo)
@@ -797,7 +797,7 @@ class Play(Scene):
                 if self.time <= 0:
                     self.time = 0.0
                     self.state, self.state_t = "ending", 0.0
-                    w.stamp("時", "Time's up", W / 2, H / 2 - 20, 150)
+                    w.stamp("TIME", "Time's up", W / 2, H / 2 - 20, 150)
                     self.app.audio.play("gong")
             for q in self.queue:
                 q[0] -= wdt
@@ -915,8 +915,8 @@ class GameOver(Scene):
         self.w = World(app, blurred(snap, (100, 92, 88)))
         self.t = 0.0
         self.new_best = play.score > play.best_prev and play.score > 0
-        self.retry = SliceButton(self.w, "watermelon", W * 0.38, 548, "再", "Retry", "or press Enter", ring=72)
-        self.menu = SliceButton(self.w, "apple", W * 0.62, 548, "戻", "Menu", "or press Esc", ring=72)
+        self.retry = SliceButton(self.w, "watermelon", W * 0.38, 548, "TRY", "Retry", "or press Enter", ring=72)
+        self.menu = SliceButton(self.w, "apple", W * 0.62, 548, "MENU", "Menu", "or press Esc", ring=72)
         self.choice = None
         self.stamped = 0
         self.shown = 0.0
@@ -944,10 +944,10 @@ class GameOver(Scene):
         if self.stamped == 0 and self.t > 0.2:
             self.stamped = 1
             over = "Time's up" if self.play.time is not None else "Game over"
-            self.w.stamp("終", over, W / 2, 104, 88, hold=True)
+            self.w.stamp("OVER", over, W / 2, 104, 88, hold=True)
         if self.stamped == 1 and self.new_best and self.t > self.COUNT_AT + self.COUNT:
             self.stamped = 2
-            self.w.stamp("極", "New best", W / 2 + 300, 280, 104, hold=True)
+            self.w.stamp("BEST", "New best", W / 2 + 300, 280, 104, hold=True)
             self.w.particles.sparks(W / 2 + 300, 280, GOLD, 60, 700)
             self.app.audio.play("power")
         if self.t > 0.6 and not self.choice:

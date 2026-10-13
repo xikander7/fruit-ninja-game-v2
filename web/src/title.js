@@ -121,7 +121,7 @@ export class TitleIntro {
     this.rect = rectAt(this.ink.width, this.ink.height, "center", [W / 2, CY]);
     this.swash = makeSwash(Math.trunc(this.rect.w * 0.86), shade(HANKO, 1.05));
     this.streak = makeStreak(this.rect.h + 70);
-    this.seal = app.art.seal("忍", 44);
+    this.seal = app.art.seal("H", 44);
     this.blade = BLADES[app.save.blade].slice(0, 3);
     app.audio.play("throw", 0.8);
     this.melon = world.throw("watermelon", W / 2, 0, 0, 0);

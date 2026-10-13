@@ -186,7 +186,7 @@ def draw_ki(play, ui):
     full = ki.full and play.power is None
     # A slow 0-to-1 wobble over time that makes the full Ki bar breathe.
     pulse = 0.5 + 0.5 * math.sin(play.w.t * 4.5)
-    label(ui, f, f.mono12, "KI", GOLD if full else MUTED, (x, y - 14), "midleft", tracking=4)
+    label(ui, f, f.mono12, "POWER", GOLD if full else MUTED, (x, y - 14), "midleft", tracking=2)
     if full:
         label(ui, f, f.mono12, "Q  W  E", GOLD, (x + KI_W, y - 14), "midright", tracking=2, alpha=int(150 + 105 * pulse))
         g = pygame.transform.smoothscale(glow(app.art, 48, GOLD, 0.5 + 0.35 * pulse), (KI_W + 60, 34))

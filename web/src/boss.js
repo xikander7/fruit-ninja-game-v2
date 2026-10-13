@@ -291,7 +291,7 @@ function defeat(play, b) {
 /** The seal where the boss was: by now the burst has flown out past the rim and the halves have parted. */
 function seal(play, b) {
   const [x, y] = b.cut;
-  play.w.stamp("討", "Boss down", x, y - 20, 140, undefined, b.seal);
+  play.w.stamp("WIN", "Boss down", x, y - 20, 140, undefined, b.seal);
   b.seal = null;
 }
 

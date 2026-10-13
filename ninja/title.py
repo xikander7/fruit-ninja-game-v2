@@ -123,7 +123,7 @@ class TitleIntro:
         self.streak = make_streak(self.rect.height + 70)
         self.band = make_band(120)
         self.sub_font = _font(Fonts.MONO[0], 17, Fonts.MONO[1], Fonts.MONO[2])
-        self.seal = app.art.seal("忍", 44)
+        self.seal = app.art.seal("H", 44)
         self.blade = BLADES[app.save["blade"]][:3]
         app.audio.play("throw", 0.8)
         self.melon = world.throw("watermelon", W / 2, 0, 0, 0)
