@@ -8,11 +8,14 @@ the menu opens, a watermelon is tossed up and sliced, and the name "Honey’s Sl
 
 ![Fighting the Durian boss](docs/web-boss.png)
 
-The game exists in two versions that share the same pictures, sounds and rules:
+The game exists in two versions that share the same pictures, sounds and rules, plus a small online service that keeps
+the shared best scores:
 
 - a **web version** in JavaScript (folder `web/`), which runs in any browser on a computer, an Android phone or an
   iPhone;
-- a **desktop version** in Python (folder `ninja/`), which also builds into a Windows `.exe`.
+- a **desktop version** in Python (folder `ninja/`), which also builds into a Windows `.exe`;
+- a **score service** (folder `worker/`), a small program on Cloudflare that stores one global best score per mode for
+  the web version.
 
 This file is written for someone new to programming. It explains how to play, what each technology is for, what every
 file does and how one frame of the game is made.
@@ -123,9 +126,31 @@ Hazards and special fruit (Hero Path, after 20 seconds):
                        tools/deploy_web.py
                                 |
                        GitHub Pages (gh-pages branch)
-                                |
-                 Cloudflare Worker + D1 (global scores)
+                                |   the browser asks for scores (web/src/rules/leaderboard.js)
+                                v
+                 worker/ : Cloudflare Worker + D1 database (global scores)
 ```
+
+How the pieces are connected, in short:
+
+- `assets/` is the single source of pictures, sounds and fonts. Python reads it directly. For the web,
+  `tools/build_web_js.py` converts it into `web/assets/`.
+- `tools/deploy_web.py` copies `web/` into `build/site` and pushes it to the `gh-pages` branch. GitHub Pages then
+  serves it at the game's link.
+- The web game talks to the score service only over HTTPS. The address is `LEADERBOARD_API` in `web/src/config.js`.
+  The service only answers requests that come from the GitHub Pages site (or `localhost` while developing).
+- The desktop game never uses the network. It keeps scores in a file on your computer.
+
+How a global score travels:
+
+1. The menu asks `GET /v1/scores` and shows the global best for each mode.
+2. When a run starts, the game asks `POST /v1/runs/start`. The service replies with a signed ticket (a token) that
+   is valid for 15 minutes and holds the mode, the time and a random number.
+3. When the run ends, the game sends the score, the run length and the ticket to `POST /v1/runs/finish`.
+4. The service checks the signature, that the ticket was not used before, the request size, how often this visitor
+   has sent scores, and whether the score and time are possible for that mode. If everything is fine and the score
+   beats the stored best, it saves it in the D1 database.
+5. If the service is down or slow, the game just carries on. Scores are optional extras, never a requirement to play.
 
 Both versions follow the same rules and use the same numbers (gravity 1250, slice speed 300 px/s, 30 boss hits and
 so on). The Python code in `ninja/` is the reference. The JavaScript code in `web/src/` is a port of it. The numbers
@@ -145,14 +170,17 @@ JavaScript.
 
 | Language | Lines (about) | Where | What it does |
 |---|---|---|---|
-| Python | 5,300 | `ninja/`, `main.py` | The desktop game: rules, drawing, sound, menus, bosses, powers |
-| Python | 1,700 | `tests/` | Automatic checks of the desktop game |
-| Python | 550 | `tools/` | Build scripts: prepare sprites and sounds, build the Windows `.exe`, publish the website |
-| JavaScript | 5,200 | `web/src/` | The web game: the same rules, drawing, sound and touch controls, running in the browser |
-| JavaScript | 175 | `web/tests/` | Checks of the web game's rules |
+| Python | 5,800 | `ninja/`, `main.py` | The desktop game: rules, drawing, sound, menus, bosses, powers |
+| Python | 2,100 | `tests/` | Automatic checks of the desktop game |
+| Python | 650 | `tools/` | Build scripts: prepare sprites and sounds, build the Windows `.exe`, publish the website |
+| JavaScript | 6,000 | `web/src/` | The web game: the same rules, drawing, sound and touch controls, running in the browser |
+| JavaScript | 460 | `web/tests/` | Checks of the web game's rules, screens, English text and score client |
+| JavaScript | 260 | `worker/src/` | The score service that runs on Cloudflare |
+| JavaScript | 250 | `worker/test/` | Checks of the score service |
+| SQL | 30 | `worker/migrations/` | Creates the three tables of the score database |
 | HTML and CSS | 50 | `web/index.html` | The loading screen, the Play buttons and the canvas the game draws on |
 | GLSL | inside `ninja/gpu.py` | desktop only | Small programs that run on the graphics card for glow, shockwaves and the vignette |
-| JSON | tiny | the save file, `audio/manifest.json` | Plain data: your scores and the list of sound files |
+| JSON, JSONC | tiny | the save file, `audio/manifest.json`, `worker/wrangler.jsonc` | Plain data: your scores, the list of sound files, the service settings |
 
 The art and sounds are not code. They are PNG and JPG images, WAV audio and TTF font files that both versions load.
 
@@ -162,6 +190,8 @@ There are two games here, and they share one set of pictures, sounds and rules:
   graphics-card effects. PyInstaller packs it into a Windows program.
 - The web game is JavaScript. It draws on an HTML canvas, plays sound through the browser's Web Audio, and runs from a
   website link. It needs no libraries and no install step.
+
+- The score service is JavaScript too. It runs on Cloudflare Workers and stores data in a D1 (SQLite) database.
 
 Python also does the preparation work: it converts the sounds, copies the art, builds the Windows version and
 publishes the website.
@@ -277,6 +307,25 @@ pytest). The JavaScript rules tests use the test runner built into Node.js (`nod
 
 PyInstaller packs Python, pygame and the game into a folder with a `.exe`, so Windows users do not need Python.
 
+### Cloudflare Workers and D1 (global scores)
+
+A Worker is a small JavaScript program that Cloudflare runs each time someone sends it a web request, so there is no
+server to look after. D1 is Cloudflare's database (it is SQLite) that the Worker reads and writes. Together they make
+the score service in `worker/`. Three tables are used: `global_scores` (the best score of each mode), `used_nonces`
+(tickets that were already spent) and `submission_limits` (how many scores each visitor sent lately). The visitor is
+stored only as a salted hash, never as an address.
+
+### Signed tickets (HMAC)
+
+A signed ticket is a short piece of text the service makes and signs with a secret key (HMAC-SHA-256). When it comes
+back, the service can prove it made it and that nobody changed it. Two secrets are needed, `RUN_TOKEN_SECRET` and
+`RATE_LIMIT_SALT`. They are stored in Cloudflare and are never in git or in the browser.
+
+### Wrangler
+
+Wrangler is Cloudflare's command-line tool (run with `npx wrangler`). It deploys the Worker and applies the database
+migration.
+
 ### GitHub Pages
 
 GitHub Pages serves the game files from the `gh-pages` branch. Gameplay runs in the player's browser. Global best
@@ -306,8 +355,8 @@ fruit-ninja-game-v2/
 ├── ninja/                  The desktop game (Python package)
 ├── tests/                  Python tests
 ├── tools/                  Scripts that build assets and releases
-├── web/                    The web game (JavaScript)
-├── worker/                 Secure global-score API and D1 migration
+├── web/                    The web game (JavaScript) and its tests
+├── worker/                 The global-score service (Cloudflare Worker + D1) and its tests
 └── docs/                   Screenshots used by this file
 ```
 
@@ -366,6 +415,10 @@ The page and the tests:
 | `package.json` | Only says "treat .js files as ES modules" so Node can run the tests |
 | `favicon.png` | The tab icon |
 | `tests/rules.test.mjs` | The rules tests |
+| `tests/game-flow.test.mjs` | Walks through the screens of a run |
+| `tests/leaderboard.test.mjs` | The score client: timeouts, bad replies, offline |
+| `tests/english-ui.test.mjs` | Makes sure player-facing text is English |
+| `tests/visuals.test.mjs` | Checks the drawing helpers |
 | `assets/` | Built by `tools/build_web_js.py`. Not stored in git |
 
 The rules, in `web/src/rules/`. These files have no drawing code, so Node can test them:
@@ -378,6 +431,7 @@ The rules, in `web/src/rules/`. These files have no drawing code, so Node can te
 | `boss.js` | The boss: 30 hit points, rise, hover and escape phases, crack stages, and when the next boss appears |
 | `hazards.js` | The hazard odds, the shuriken's flight and how a parry bounces it, and constants for ice and golden fruit |
 | `save.js` | Reading and writing the save, with fallbacks for missing or broken data |
+| `leaderboard.js` | `LeaderboardClient`: gets the global bests, starts a run, sends the final score. Every call has a short timeout and returns nothing on failure |
 
 The game, in `web/src/`:
 
@@ -385,19 +439,19 @@ The game, in `web/src/`:
 |---|---|
 | `main.js` | Loads everything with a progress bar, waits for the first tap (browsers keep sound locked until then), starts the frame loop |
 | `net.js` | Loads files six at a time and retries a failed one, so a weak phone connection does not stop the game |
-| `config.js` | Sizes, colours, the fruit table, modes, blades. The `VIEW` object records the visible area |
+| `config.js` | Sizes, colours, the fruit table, modes, blades, the score service address (`LEADERBOARD_API`). The `VIEW` object records the visible area |
 | `util.js` | Random-number helpers, colour helpers, a seeded random generator |
 | `gfx.js` | Drawing helpers: rotated sprites, cached glow images, shadows, blur, curve smoothing |
 | `assets.js` | Loads sprites and fonts. Builds shadows, juice-tinted splashes, English red ink seals, the wall with its vignette, and the text cache |
 | `ui.js` | Small helpers for placing text and drawing labels and bars |
 | `input.js` | Turns mouse, touch and keyboard events into a simple list of events with stage coordinates |
 | `audio.js` | The Web Audio mixer: loading, one music voice, sound effects, the limiter |
-| `app.js` | The window, the layers, input to slicing, the frame loop, scene changes, fullscreen |
+| `app.js` | The window, the layers, input to slicing, the frame loop, scene changes, fullscreen, and loading and sending global scores |
 | `world.js` | The world: fruit, halves, particles, stains, shake, slow motion, the cut and bomb effects |
 | `entities.js` | `Body` and `Half`: a thrown fruit and a cut half |
 | `fx.js` | Particles, juice stains, blade trail, screen shake, score popups, seal stamps |
 | `menu.js` | The menu, plus `SliceButton`, the fruit you cut to choose |
-| `play.js` | A run: spawning waves, scoring, combos, strikes, the clock, pause |
+| `play.js` | A run: spawning waves, scoring, combos, strikes, the clock, pause, and asking for a score ticket when it starts |
 | `gameover.js` | The results screen |
 | `hud.js` | Score, timer, strikes, Power bar and power seals, the colour grades over the world, the on-screen buttons |
 | `powers.js` | Time Stop, Shadow Clones, Dragon Fire |
@@ -406,6 +460,17 @@ The game, in `web/src/`:
 | `hazards.js` | How hazards plug into a run and how they are drawn |
 | `title.js` | The title intro |
 | `wipe.js` | The transition that cuts the screen in two |
+
+### worker/ (score service)
+
+| File | What it does |
+|---|---|
+| `src/index.js` | The Worker. Routes `GET /v1/scores`, `POST /v1/runs/start` and `POST /v1/runs/finish`, reads the body safely, applies the rate limit and the one-use ticket rule, updates D1 |
+| `src/protocol.js` | The rules of the conversation: allowed origins, the limits per mode, creating and checking signed tickets, checking the final score message |
+| `migrations/0001_global_scores.sql` | Creates the three tables and the four starting rows |
+| `wrangler.jsonc` | Service name, database binding and the public database id |
+| `package.json` | Marks the code as ES modules and defines `npm test` |
+| `test/api.test.mjs`, `test/protocol.test.mjs` | Tests with a fake database and fake requests |
 
 ---
 
@@ -550,9 +615,19 @@ JavaScript (web version):
 node --test "web/tests/*.test.mjs"
 ```
 
+Score service:
+
+```
+cd worker
+npm test
+```
+
 They cover the rules: whether a swipe touches a circle, the Fever steps and rain, the Power meter, saves (valid, corrupt,
 and storage that throws), the boss (30 hits, the hit cooldown, crack stages, appearing every 45 seconds) and the
 shuriken (flight, parry, leaving the screen).
+
+The worker tests cover the signed tickets (valid, changed, expired, reused), the allowed origins, the size limit, the
+rate limit and the score checks for each mode. They need no Cloudflare account.
 
 Drawing and sound are checked by running the page in a real browser and looking at screenshots, not by unit tests.
 
@@ -602,9 +677,21 @@ python tools/deploy_web.py --push       # also replaces the gh-pages branch with
 
 The site is only static files, so any web host can serve the `build/site` folder.
 
-The shared-score backend is configured in `worker/wrangler.jsonc`. Its D1 database identifier and Worker URL are
-public configuration, while `RUN_TOKEN_SECRET` and `RATE_LIMIT_SALT` are generated directly in Cloudflare and must
-never be committed. Deploy it with `npx wrangler deploy --config worker/wrangler.jsonc`.
+Publish the score service (needs a free Cloudflare account and `npx wrangler login`):
+
+```
+npx wrangler d1 migrations apply honeys-slash-and-splash-scores --remote --config worker/wrangler.jsonc
+npx wrangler secret put RUN_TOKEN_SECRET --config worker/wrangler.jsonc     # long random text, 32+ characters
+npx wrangler secret put RATE_LIMIT_SALT --config worker/wrangler.jsonc      # another long random text
+npx wrangler deploy --config worker/wrangler.jsonc
+```
+
+The service settings live in `worker/wrangler.jsonc`. The database id and the Worker address are public settings.
+The two secrets are set directly in Cloudflare and must never be committed. If you deploy under another address, change
+`LEADERBOARD_API` in `web/src/config.js`. To allow another website, change `corsHeaders` in `worker/src/protocol.js`.
+
+Temporary folders such as `build/`, `dist/`, `web/assets/`, `.wrangler/`, `__pycache__/` and `.pytest_cache/` are
+made by the commands above. They are ignored by git and safe to delete.
 
 Windows version:
 
@@ -630,6 +717,6 @@ The project grew in steps. Each older version is kept as a git tag, so you can l
 | `v3.0` | v3 | Photographic art and sound, GPU post-processing, juice splashes |
 | `v4.0` | v4 | Hero Path mode (powers, Fever, bosses, hazards), the signed title, the Windows edition |
 | `v4.1` | v4.1 | The web version in JavaScript is added |
-| `main` | current | Honey’s Slash & Splash: both editions together, with every blade available from the start |
+| `main` | current | Honey’s Slash & Splash: both editions together, every blade available from the start, an English-only interface and secure global best scores |
 
 To look at an older version: `git checkout v3.0` (and `git checkout main` to come back).
