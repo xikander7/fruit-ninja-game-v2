@@ -23,7 +23,8 @@ export function parseSave(text) {
       const v = raw && raw.best ? raw.best[m] : 0;
       data.best[m] = typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.trunc(v) : 0;
     }
-    if (raw && Object.hasOwn(BLADES, raw.blade)) data.blade = raw.blade;
+    const blade = raw && raw.blade === "Sakura" ? "Petal Fan" : raw && raw.blade;
+    if (Object.hasOwn(BLADES, blade)) data.blade = blade;
     data.muted = Boolean(raw && raw.muted);
     const n = Math.trunc(Number(raw && raw.total_sliced));
     data.total_sliced = Number.isFinite(n) ? Math.max(0, n) : 0;

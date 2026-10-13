@@ -42,7 +42,7 @@ CEDAR = (92, 54, 36)  # procedural fallback wood only
 # name: (outer glow, mid, core, unlock score, cutting-tool style)
 BLADES = {
     "Moonlight": ((40, 90, 170), (120, 190, 255), (255, 255, 255), 0, "katana"),
-    "Sakura": ((170, 40, 100), (255, 140, 195), (255, 240, 248), 0, "fan"),
+    "Petal Fan": ((170, 40, 100), (255, 140, 195), (255, 240, 248), 0, "fan"),
     "Ember": ((190, 50, 0), (255, 140, 30), (255, 240, 190), 0, "cleaver"),
     "Gold Leaf": ((150, 100, 0), (255, 205, 70), (255, 255, 225), 0, "chakram"),
 }
@@ -52,7 +52,7 @@ MODES = {
     "classic": {"title": "Classic", "glyph": "斬", "hint": "3 strikes · bombs end it"},
     "arcade": {"title": "Arcade", "glyph": "速", "hint": "60 seconds · power bananas"},
     "zen": {"title": "Zen", "glyph": "禅", "hint": "90 seconds · no bombs"},
-    "path": {"title": "Ninja Path", "glyph": "道", "hint": "Endless · powers · bosses"},
+    "path": {"title": "Hero Path", "glyph": "道", "hint": "Endless · powers · bosses"},
 }
 # which v4 systems each mode runs; every hook is a no-op when its flag is off
 MODE_FEATURES = {"classic": set(), "zen": set(), "arcade": {"powers", "fever"}, "path": {"powers", "fever", "boss", "hazards"}}

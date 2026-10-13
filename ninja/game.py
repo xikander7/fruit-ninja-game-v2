@@ -42,8 +42,9 @@ def load_save():
         for m in MODES:
             v = raw.get("best", {}).get(m, 0)
             data["best"][m] = int(v) if isinstance(v, (int, float)) and v >= 0 else 0
-        if raw.get("blade") in BLADES:
-            data["blade"] = raw["blade"]
+        blade = "Petal Fan" if raw.get("blade") == "Sakura" else raw.get("blade")
+        if blade in BLADES:
+            data["blade"] = blade
         data["muted"] = bool(raw.get("muted", False))
         data["total_sliced"] = max(0, int(raw.get("total_sliced", 0)))
     except Exception:  # missing or corrupt save: start fresh

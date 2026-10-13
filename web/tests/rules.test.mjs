@@ -9,7 +9,7 @@ import { KiMeter, KI_MAX } from "../src/rules/ki.js";
 import { parseSave, loadSave, writeSave, defaultSave, SAVE_KEY } from "../src/rules/save.js";
 import { Boss, BossDirector, HP, CRACK_AT, COOLDOWN, DEATH } from "../src/rules/boss.js";
 import { rollHazard, Shuriken, HAZARDS_FROM, SHURIKEN_SPEED, PARRY_BOOST } from "../src/rules/hazards.js";
-import { BLADES, SUBTITLE, TITLE } from "../src/config.js";
+import { BLADES, MODES, SUBTITLE, TITLE } from "../src/config.js";
 import { Menu } from "../src/menu.js";
 import * as appModule from "../src/app.js";
 import * as fxModule from "../src/fx.js";
@@ -138,13 +138,29 @@ test("save: defaults, valid, corrupt and out-of-range values", () => {
 test("save: round trip through storage, and a storage that throws", () => {
   const mem = new Map();
   const storage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
-  const data = defaultSave(); data.best.zen = 77; data.blade = "Sakura";
+  const data = defaultSave(); data.best.zen = 77; data.blade = "Petal Fan";
   writeSave(storage, data);
   assert.ok(mem.has(SAVE_KEY));
   assert.deepEqual(loadSave(storage), data);
   const broken = { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } };
   assert.deepEqual(loadSave(broken), defaultSave());
   assert.doesNotThrow(() => writeSave(broken, data));
+});
+
+// Proves: the English-only blade rename preserves an existing player's scores and selected fan.
+test("save: migrates Sakura to Petal Fan without losing progress", () => {
+  const saved = parseSave(JSON.stringify({
+    best: { classic: 120, arcade: 88, zen: 64, path: 210 },
+    blade: "Sakura",
+    muted: false,
+    total_sliced: 47,
+  }));
+  assert.equal(saved.blade, "Petal Fan");
+  assert.deepEqual(saved.best, { classic: 120, arcade: 88, zen: 64, path: 210 });
+  assert.equal(saved.total_sliced, 47);
+  assert.ok(Object.hasOwn(BLADES, "Petal Fan"));
+  assert.ok(!Object.hasOwn(BLADES, "Sakura"));
+  assert.equal(MODES.path.title, "Hero Path");
 });
 
 // Proves: a boss takes 30 hits, ignores hits inside the cooldown, cracks in stages, splits on the last hit and then finishes.

@@ -41,6 +41,19 @@ class Modes(unittest.TestCase):
         game.SAVE_PATH.write_text('{"best": {"classic": 5, "arcade": 1, "zen": 2}}', encoding="utf-8")
         self.assertEqual(game.load_save()["best"]["path"], 0)
 
+    # Proves: old saves keep every score when the Sakura blade is renamed for the English-only interface.
+    def test_old_sakura_save_migrates_to_petal_fan(self):
+        game.SAVE_PATH.write_text(
+            '{"best":{"classic":120,"arcade":88,"zen":64,"path":210},'
+            '"blade":"Sakura","total_sliced":47}', encoding="utf-8")
+        saved = game.load_save()
+        self.assertEqual(saved["blade"], "Petal Fan")
+        self.assertEqual(saved["best"], {"classic": 120, "arcade": 88, "zen": 64, "path": 210})
+        self.assertEqual(saved["total_sliced"], 47)
+        self.assertIn("Petal Fan", settings.BLADES)
+        self.assertNotIn("Sakura", settings.BLADES)
+        self.assertEqual(settings.MODES["path"]["title"], "Hero Path")
+
     # Proves: in path mode a bomb takes one life but the run continues.
     def test_path_bomb_costs_a_life_not_the_run(self):
         app = self.app
