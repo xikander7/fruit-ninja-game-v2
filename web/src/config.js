@@ -26,6 +26,8 @@ export const MUTED = [150, 138, 120];
 // Game name shown on the title screen.
 export const TITLE = "Honey’s Slash & Splash";
 export const SUBTITLE = "FRUIT-SLICING ARCADE";
+// Public Worker endpoint only; this is not a credential. Empty keeps global scores disabled in local builds.
+export const LEADERBOARD_API = "";
 
 // Blade trail skins (colours are [r, g, b]).
 // name: [outer glow, mid, core, unlock score, cutting-tool style]
