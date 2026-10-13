@@ -27,7 +27,7 @@ export const MUTED = [150, 138, 120];
 export const TITLE = "Honey’s Slash & Splash";
 export const SUBTITLE = "FRUIT-SLICING ARCADE";
 // Public Worker endpoint only; this is not a credential. Empty keeps global scores disabled in local builds.
-export const LEADERBOARD_API = "";
+export const LEADERBOARD_API = "https://honeys-slash-and-splash-scores.xikander7-games.workers.dev";
 
 // Blade trail skins (colours are [r, g, b]).
 // name: [outer glow, mid, core, unlock score, cutting-tool style]

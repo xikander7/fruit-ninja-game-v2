@@ -61,7 +61,7 @@ def main():
     cmd = [sys.executable, "-m", "PyInstaller", str(ROOT / "main.py"), "--noconfirm", "--clean", "--noconsole",
            "--name", NAME, "--icon", str(icon)]
     # --add-data copies a folder into the bundle as 'source;destination' (';' is the separator on Windows).
-    for sub in ("sprites", "audio", "fonts", "glyphs"):  # not assets/raw: the source art is git-ignored and never ships
+    for sub in ("sprites", "audio", "fonts"):  # not assets/raw: the source art is git-ignored and never ships
         cmd += ["--add-data", f"{ROOT / 'assets' / sub};assets/{sub}"]
     # moderngl picks its GL loader at runtime, so PyInstaller can't see the import
     cmd += ["--hidden-import", "glcontext", "--hidden-import", "glcontext.wgl",

@@ -4,3 +4,4 @@ assets/raw/
 dist/
 build/
 web/assets/
+.wrangler/

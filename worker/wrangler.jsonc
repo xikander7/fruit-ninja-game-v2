@@ -3,11 +3,13 @@
   "name": "honeys-slash-and-splash-scores",
   "main": "src/index.js",
   "compatibility_date": "2026-10-12",
+  "workers_dev": true,
+  "preview_urls": false,
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "honeys-slash-and-splash-scores",
-      "database_id": "replace-during-deployment",
+      "database_id": "617e5ea9-e378-4b32-994d-45ddcb4824a4",
       "migrations_dir": "migrations"
     }
   ]

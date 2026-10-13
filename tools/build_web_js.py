@@ -68,7 +68,7 @@ def main():
     # Rebuild from scratch every time so deleted files don't linger in the output.
     if OUT.exists():
         shutil.rmtree(OUT)
-    for sub in ("sprites", "glyphs", "boot"):  # never assets/raw: the source art is git-ignored and never ships
+    for sub in ("sprites", "boot"):  # never assets/raw: the source art is git-ignored and never ships
         shutil.copytree(SRC / sub, OUT / sub)
     (OUT / "fonts").mkdir(parents=True)
     for f in (SRC / "fonts").iterdir():

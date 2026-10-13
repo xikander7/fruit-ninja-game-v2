@@ -108,7 +108,7 @@ Hazards and special fruit (Hero Path, after 20 seconds):
 ## How the project fits together
 
 ```
-                 assets/  (sprites, sounds, fonts, legacy glyph stencils)
+                    assets/  (sprites, sounds and fonts)
                     |
         +-----------+-----------+
         |                       |
@@ -123,6 +123,8 @@ Hazards and special fruit (Hero Path, after 20 seconds):
                        tools/deploy_web.py
                                 |
                        GitHub Pages (gh-pages branch)
+                                |
+                 Cloudflare Worker + D1 (global scores)
 ```
 
 Both versions follow the same rules and use the same numbers (gravity 1250, slice speed 300 px/s, 30 boss hits and
@@ -277,8 +279,8 @@ PyInstaller packs Python, pygame and the game into a folder with a `.exe`, so Wi
 
 ### GitHub Pages
 
-GitHub Pages serves a folder of static files from the `gh-pages` branch. The web game needs nothing else, because all
-the work happens in the player's browser.
+GitHub Pages serves the game files from the `gh-pages` branch. Gameplay runs in the player's browser. Global best
+scores use a small Cloudflare Worker and D1 database; personal scores and preferences remain in the browser.
 
 ### numpy
 
@@ -288,7 +290,7 @@ numpy does fast maths on large arrays. The build tools use it to process sound f
 
 Cormorant SC (titles), Barlow Condensed (numbers) and IBM Plex Mono (small labels) are under the SIL Open Font
 License, which allows bundling them with a game. The licences are in `assets/fonts/`. English seal labels use the
-bundled Barlow Condensed font. `assets/glyphs/` contains legacy stencils retained for older builds but no longer loaded.
+bundled Barlow Condensed font. All player-facing labels and seals are rendered in English.
 
 ---
 
@@ -305,6 +307,7 @@ fruit-ninja-game-v2/
 ├── tests/                  Python tests
 ├── tools/                  Scripts that build assets and releases
 ├── web/                    The web game (JavaScript)
+├── worker/                 Secure global-score API and D1 migration
 └── docs/                   Screenshots used by this file
 ```
 
@@ -315,7 +318,6 @@ fruit-ninja-game-v2/
 | `sprites/` | One PNG per fruit, one per cut half (`apple_half.png`), the bomb, ice bomb, shuriken, the Durian and Pineapple King, four juice splash photos, and `background.jpg` (the wooden wall) |
 | `audio/` | Sound effects and music as WAV files. Names look like `splat1_3.wav`: the letters say which sound, the last number is the variation |
 | `fonts/` | The three fonts and their licence files |
-| `glyphs/` | Legacy seal stencil PNGs retained for older builds; the English-only game does not load them |
 
 `assets/raw/` holds the unprocessed source files. It is not stored in git.
 
@@ -350,9 +352,8 @@ without OpenGL), `test_art.py`, `test_audio.py`, `test_ui.py`, `test_package.py`
 | `build_sprites.py` | Turns the raw cutouts in `assets/raw` into the game sprites |
 | `build_boot_art.py` | Cuts the larger fruit and splash images used by the loading screen into `assets/boot` (needs Pillow) |
 | `build_audio.py` | Splits and trims the raw audio into game-ready WAV files |
-| `build_glyphs.py` | Legacy tool that rendered the old seal stencils |
 | `build_windows.py` | Builds the Windows edition with PyInstaller |
-| `build_web_js.py` | Builds `web/assets/`: converts the sounds to 22 kHz mono, copies sprites, boot art, fonts and glyphs, writes the sound list |
+| `build_web_js.py` | Builds `web/assets/`: converts the sounds to 22 kHz mono, copies sprites, boot art and fonts, writes the sound list |
 | `deploy_web.py` | Builds the site into `build/site` and, with `--push`, publishes it to the `gh-pages` branch |
 
 ### web/ (web game)
@@ -506,7 +507,8 @@ again" button. Sound stays locked in browsers until a tap, which is why there is
 
 ## How saving works
 
-Scores are saved as a small piece of JSON.
+Personal scores are saved as a small piece of JSON. The web edition also displays one shared global best for each
+mode, stored in Cloudflare D1 and loaded through the public Worker API.
 
 - Desktop: in `~/.fruit_ninja_dojo.json` in your home folder.
 - Web: in the browser's local storage, under the key `slash-and-splash-save`.
@@ -523,7 +525,11 @@ Scores are saved as a small piece of JSON.
 `best` holds your best score in each mode, `blade` is the one you picked, `muted` is whether
 sound is off and `total_sliced` counts every fruit you have cut. A missing or broken save just starts you fresh. The
 desktop version writes to a temporary file first and swaps it in, so a crash never leaves half a save. In the web
-version, `rules/save.js` does the loading and checking, and a blocked or full storage never crashes the game.
+version, `rules/save.js` does the loading and checking, and a blocked or full storage never crashes the game. Global
+score requests are optional and time out quickly, so the menu and gameplay still work if the service is unavailable.
+The API accepts only the GitHub Pages origin, limits request size and submission rate, validates plausible run data,
+uses short-lived signed run tokens, and never ships its signing secrets to the browser. Because the game runs on a
+player-controlled device, these checks reduce casual abuse but cannot make browser-game scores impossible to cheat.
 
 ---
 
@@ -595,6 +601,10 @@ python tools/deploy_web.py --push       # also replaces the gh-pages branch with
 ```
 
 The site is only static files, so any web host can serve the `build/site` folder.
+
+The shared-score backend is configured in `worker/wrangler.jsonc`. Its D1 database identifier and Worker URL are
+public configuration, while `RUN_TOKEN_SECRET` and `RATE_LIMIT_SALT` are generated directly in Cloudflare and must
+never be committed. Deploy it with `npx wrangler deploy --config worker/wrangler.jsonc`.
 
 Windows version:
 
