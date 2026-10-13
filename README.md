@@ -22,16 +22,17 @@ file does and how one frame of the game is made.
 1. [Play it](#play-it)
 2. [Controls and game modes](#controls-and-game-modes)
 3. [How the project fits together](#how-the-project-fits-together)
-4. [Why Python, and which languages could build this](#why-python-and-which-languages-could-build-this)
-5. [The technologies, in plain words](#the-technologies-in-plain-words)
-6. [Every file and folder](#every-file-and-folder)
-7. [How one frame works](#how-one-frame-works)
-8. [The web version in detail](#the-web-version-in-detail)
-9. [How saving works](#how-saving-works)
-10. [Tests](#tests)
-11. [Try changing something](#try-changing-something)
-12. [Build, run and publish](#build-run-and-publish)
-13. [History of the project](#history-of-the-project)
+4. [The languages used in this project](#the-languages-used-in-this-project)
+5. [Why Python, and which languages could build this](#why-python-and-which-languages-could-build-this)
+6. [The technologies, in plain words](#the-technologies-in-plain-words)
+7. [Every file and folder](#every-file-and-folder)
+8. [How one frame works](#how-one-frame-works)
+9. [The web version in detail](#the-web-version-in-detail)
+10. [How saving works](#how-saving-works)
+11. [Tests](#tests)
+12. [Try changing something](#try-changing-something)
+13. [Build, run and publish](#build-run-and-publish)
+14. [History of the project](#history-of-the-project)
 
 ---
 
@@ -127,6 +128,39 @@ Why two versions? Browsers run JavaScript natively and draw with the graphics ca
 if the whole Python interpreter is shipped to the page, and in that form the game was too slow on phones, could not
 fill the window and had crackling sound. So the web version is plain JavaScript, and the Python version stays as a
 desktop game.
+
+---
+
+## The languages used in this project
+
+The game is built from several languages, each doing the job it suits best. Most of the code is Python and
+JavaScript.
+
+| Language | Lines (about) | Where | What it does |
+|---|---|---|---|
+| Python | 5,300 | `ninja/`, `main.py` | The desktop game: rules, drawing, sound, menus, bosses, powers |
+| Python | 1,700 | `tests/` | Automatic checks of the desktop game |
+| Python | 550 | `tools/` | Build scripts: prepare sprites and sounds, build the Windows `.exe`, publish the website |
+| JavaScript | 5,200 | `web/src/` | The web game: the same rules, drawing, sound and touch controls, running in the browser |
+| JavaScript | 175 | `web/tests/` | Checks of the web game's rules |
+| HTML and CSS | 50 | `web/index.html` | The loading screen, the Play buttons and the canvas the game draws on |
+| GLSL | inside `ninja/gpu.py` | desktop only | Small programs that run on the graphics card for glow, shockwaves and the vignette |
+| JSON | tiny | the save file, `audio/manifest.json` | Plain data: your scores and the list of sound files |
+
+The art and sounds are not code. They are PNG and JPG images, WAV audio and TTF font files that both versions load.
+
+There are two games here, and they share one set of pictures, sounds and rules:
+
+- The desktop game is Python. It uses pygame-ce for the window, drawing and sound, and moderngl to run the
+  graphics-card effects. PyInstaller packs it into a Windows program.
+- The web game is JavaScript. It draws on an HTML canvas, plays sound through the browser's Web Audio, and runs from a
+  website link. It needs no libraries and no install step.
+
+Python also does the preparation work: it converts the sounds, copies the art, builds the Windows version and
+publishes the website.
+
+If you want to read the code, start with the short files that have no drawing in them: `web/src/rules/` for
+JavaScript, or `ninja/fever.py` for Python. The file map below explains the rest.
 
 ---
 
