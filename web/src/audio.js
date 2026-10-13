@@ -1,3 +1,7 @@
+// Sound for the web game. All sound effects and music go through the browser's Web Audio API:
+// we load audio files once, then play them as short "voices" (one playing copy of a sound).
+// Play.js and the menus call this class (app.audio.play("splat"), etc.); it never touches game rules.
+// Signal chain: sounds -> sfx/music bus -> master volume -> limiter -> soft clip -> speakers.
 // Sound, on the Web Audio API (ninja/audio.py). Why this replaces the pygame mixer in the browser: Web Audio mixes
 // on its own audio thread, so a slow frame can never starve it (that was the crackle), and everything passes
 // through one limiter, so a storm of splats, a bomb and the Fever drums add up without clipping.
@@ -9,12 +13,17 @@ const LEVEL = {
   swoosh: 0.9, splat: 0.9, throw: 0.35, explode: 0.8, fuse: 0.45, miss: 0.75, combo: 0.7, power: 0.7, stamp: 0.6, life: 0.55,
   gong: 0.75, music: 0.4, timestop: 0.7, clones: 0.7, dragonfire: 0.7, boss_hit: 0.8, boss_roar: 0.8, fever: 0.45, shuriken: 0.7, tick: 0.6,
 };
+// A "bus" below means a shared volume knob that many sounds are routed through.
+// Voice limits stop a flood of overlapping copies from turning into noise.
 const ALIASES = { stamp: "combo", life: "power" }; // names that reuse another group's files
 const VOICES = { splat: 5, swoosh: 3, throw: 3, tick: 1, boss_hit: 3, shuriken: 3 }; // simultaneous copies of one sound (default 6)
 const MAX_VOICES = 16;
+// MUSIC_GAIN and FEVER_DUCK are volume multipliers (1 = unchanged).
 const MUSIC_GAIN = 0.55; // the music channel's volume in the Python game
 const FEVER_DUCK = 0.7; // the music steps back while the Fever drums are on, so the two layers don't muddy each other
 
+// Owns the audio context (the browser's sound engine), the decoded sound buffers and the loops.
+// If the browser has no audio support, `ok` stays false and every method quietly does nothing.
 export class Audio {
   constructor() {
     this.ok = false;
@@ -37,6 +46,8 @@ export class Audio {
     }
   }
 
+  // Builds the volume chain once. A limiter (a compressor set to squash loud peaks) keeps many
+  // sounds at once from distorting; the wave shaper after it is a final safety curve.
   build() {
     const c = this.ctx;
     this.master = c.createGain();
@@ -49,6 +60,8 @@ export class Audio {
     this.limiter.release.value = 0.18;
     this.master.connect(this.limiter);
     this.softClip = c.createWaveShaper(); // the last guard: clean below 0.8, a smooth shoulder above, never past 1.0
+    // The curve maps input -> output sample values: untouched below 0.8, then eased with tanh
+    // (a smooth S-curve) so nothing ever exceeds 1.0, which is the speaker's clipping point.
     const curve = new Float32Array(4097);
     for (let i = 0; i < curve.length; i++) {
       const x = (i / 2048) - 1, a = Math.abs(x);
@@ -78,12 +91,14 @@ export class Audio {
     }
   }
 
+  // Freeze or resume all audio when the tab is hidden or shown again.
   pauseContext(hidden) {
     if (!this.ok) return;
     if (hidden) this.ctx.suspend().catch(() => {});
     else if (this.unlocked) this.ctx.resume().catch(() => {});
   }
 
+  // Downloads one audio file (with retries) and decodes it into a playable buffer.
   async fetchBuffer(url) {
     const data = await netPool(() => retry(async () => {
       const res = await fetch(url);
@@ -103,6 +118,7 @@ export class Audio {
       const jobs = [];
       let done = 0;
       const total = groups.reduce((n, [, files]) => n + files.length, 0);
+      // Each group is a sound name with one or more recorded takes (variations).
       for (const [name, files] of groups) {
         if (name === "music" || name === "fever" || name === "fuse") continue; // long loops: after the menu is up
         for (const f of files) {
@@ -133,6 +149,7 @@ export class Audio {
   }
 
   /** The countdown tick, made in code (there is no recording of it). */
+  // Two sine waves (1150 Hz and 1730 Hz) with a fast fade-out make a short "tick" click: 0.08 s long.
   makeTick() {
     const sr = this.ctx.sampleRate, n = Math.trunc(0.08 * sr);
     const b = this.ctx.createBuffer(1, n, sr);
@@ -184,6 +201,7 @@ export class Audio {
     return { src, gain, level };
   }
 
+  // Fades a loop to silence over fadeOut seconds, then stops it. v is the {src, gain} from startLoop.
   stopLoop(v, fadeOut) {
     if (!v) return;
     const t = this.ctx.currentTime;
@@ -196,6 +214,7 @@ export class Audio {
     v.src.onended = () => v.gain.disconnect();
   }
 
+  // Turns the bomb's sizzling fuse loop on or off (quiet, with a very short fade).
   fuse(on) {
     if (!this.ok) return;
     if (on && !this.muted && !this.fuseV && this.ctx.state === "running") {
@@ -221,6 +240,7 @@ export class Audio {
     }
   }
 
+  // "Ducking" = turning the music down (k < 1) or back up (k = 1) smoothly over 0.4 s.
   duckMusic(k) {
     if (!this.music) return;
     const g = this.music.gain.gain, t = this.ctx.currentTime;
@@ -242,12 +262,14 @@ export class Audio {
     this.music = this.startLoop("music", LEVEL.music * MUSIC_GAIN, 1.5, this.musicBus);
   }
 
+  // Stops music, fuse and Fever layers immediately (short fades avoid clicks).
   stopAll() {
     this.stopLoop(this.music, 0.1); this.music = null;
     this.stopLoop(this.fuseV, 0.05); this.fuseV = null;
     this.stopLoop(this.layer, 0.1); this.layer = null; this.layerName = null;
   }
 
+  // Mute button: muting stops everything, un-muting restarts the music.
   toggleMute() {
     this.muted = !this.muted;
     if (!this.ok) return;
