@@ -10,6 +10,7 @@ from .settings import W, H, GRAVITY, WASHI, GOLD
 
 
 def shade(c, k):
+    """Scale a colour's brightness: k=1 keeps it, 0.5 halves it, 0 gives black. Values are kept within 0-255."""
     return tuple(max(0, min(255, int(v * k))) for v in c)
 
 
@@ -18,12 +19,14 @@ def tint(c, k):
     return tuple(int(v + (255 - v) * k) for v in c)
 
 
+# Cache of glow images. Making one is slow, so we build each size/colour/brightness once and reuse it.
 _GLOW = {}
 
 
 def glow(art, radius, color, k):
     """Additive soft glow (RGB on black) at brightness k. Finer steps than art.soft, so a big aura shows no
     rings; radius and k are quantised so the cache stays small."""
+    # Round the radius and brightness to coarse steps so only a handful of different glows are ever made.
     radius = max(2, int(radius) // 3 * 3)
     k = round(max(0.0, min(1.0, k)) * 16) / 16
     key = (radius, color, k)
@@ -33,6 +36,7 @@ def glow(art, radius, color, k):
         steps = max(8, min(40, radius))
         for i in range(steps):
             t = i / (steps - 1)
+            # Draw circles from big and dim to small and bright; stacked on black, they fade smoothly toward the middle.
             pygame.draw.circle(s, shade(color, k * t * t), (d / 2, d / 2), radius * (1 - t * 0.95))
         _GLOW[key] = s
     return _GLOW[key]
@@ -48,6 +52,7 @@ def catmull_rom(pts, sub=4):
         return list(pts)
     out = []
     dims = range(len(pts[0]))
+    # Catmull-Rom is a way to draw a smooth curve through points: each little piece uses the 4 neighbouring points (p0..p3), and `u` goes 0-1 along the piece.
     for i in range(n - 1):
         p0, p1, p2 = pts[max(0, i - 1)], pts[i], pts[i + 1]
         p3 = pts[min(n - 1, i + 2)]
@@ -60,6 +65,7 @@ def catmull_rom(pts, sub=4):
     return out
 
 
+# Cache of ray images, like _GLOW above.
 _RAYS = {}
 
 
@@ -70,6 +76,7 @@ def ray_burst(radius, color):
         d = radius * 2 + 2
         s = pygame.Surface((d, d))
         c = d / 2
+        # Six rays, evenly spaced around the circle (tau = a full turn in radians).
         for k in range(6):
             a = k * math.tau / 6
             for i in range(8):  # stacked wedges: dim and wide outside, bright and thin in the middle
@@ -89,9 +96,11 @@ def ray_burst(radius, color):
 
 
 class P:
+    """One particle (a drop of juice, a spark, a smoke puff...). `kind` picks how it moves and how it is drawn; `__slots__` just saves memory because there can be over a thousand."""
     __slots__ = ("x", "y", "vx", "vy", "life", "max", "size", "color", "kind", "grav", "rot", "vr", "c2", "shape")
 
     def __init__(self, x, y, vx, vy, life, size, color, kind, grav=1.0):
+        """`life` is seconds until it disappears; `grav` scales how much gravity pulls on it (0 = floats, negative = rises)."""
         self.x, self.y, self.vx, self.vy = x, y, vx, vy
         self.life = self.max = life
         self.size, self.color, self.kind, self.grav = size, color, kind, grav
@@ -100,14 +109,18 @@ class P:
 
 
 class Particles:
+    """Owns every particle on screen: spawns the different effects, moves them each frame and draws them."""
+    # Hard limit on particles at once, so a huge cut storm cannot slow the game down.
     CAP = 1400
 
     def __init__(self, art):
+        """Start with no particles."""
         self.art = art
         self.items = []
         self.blur = 1.0  # slow-mo time scale: streaks shorten in slow-mo, like real motion blur
 
     def add(self, *a, **k):
+        """Create a particle (arguments are passed straight to P) unless we are at the cap. Returns it, or None if full."""
         if len(self.items) < self.CAP:
             p = P(*a, **k)
             self.items.append(p)
@@ -115,6 +128,7 @@ class Particles:
         return None
 
     def drop(self, x, y, vx, vy, life, size, color):
+        """Add one droplet of liquid."""
         p = self.add(x, y, vx, vy, life, size, color, "drop")
         if p:
             p.c2 = tint(color, 0.55)  # wet highlight along the droplet
@@ -196,12 +210,14 @@ class Particles:
         return p
 
     def sparks(self, x, y, color, n=30, speed=700, life=0.6):
+        """A burst of `n` short bright streaks flying out in all directions."""
         for _ in range(n):
             a = random.uniform(0, math.tau)
             sp = random.uniform(0.2, 1) * speed
             self.add(x, y, math.cos(a) * sp, math.sin(a) * sp, random.uniform(0.3, 1) * life, random.uniform(1.5, 3.5), color, "spark", 0.5)
 
     def smoke(self, x, y, n=18):
+        """A puff of dark grey smoke that drifts up and grows."""
         for _ in range(n):
             a = random.uniform(0, math.tau)
             sp = random.uniform(30, 220)
@@ -209,6 +225,7 @@ class Particles:
             self.add(x, y, math.cos(a) * sp, math.sin(a) * sp - 40, random.uniform(0.8, 1.6), random.uniform(18, 46), (g, g - 6, g - 10), "smoke", -0.05)
 
     def ink(self, x, y, color, n=16):
+        """A splatter of ink droplets (used when a seal is stamped)."""
         for _ in range(n):
             a = random.uniform(0, math.tau)
             sp = random.uniform(150, 480)
@@ -227,6 +244,7 @@ class Particles:
                 p.shape = [(random.uniform(0.45, 1.0), k * math.tau / m + random.uniform(-0.3, 0.3)) for k in range(m)]
 
     def embers(self, x, y, n=40, speed=650):
+        """Glowing orange sparks that rise and flicker out."""
         for _ in range(n):
             a = random.uniform(0, math.tau)
             sp = random.uniform(0.15, 1) * speed
@@ -243,18 +261,21 @@ class Particles:
             p.vr = random.uniform(1.5, 4.0)  # twinkle rate
 
     def lantern_ember(self):
+        """One ember drifting up from the bottom of the screen, as if from the dojo's lanterns."""
         p = self.add(random.uniform(W * 0.05, W * 0.95), H + 10, random.uniform(-20, 20), random.uniform(-110, -60),
                      random.uniform(4, 7), 2, (255, 140, 50), "ember", -0.01)
         if p:
             p.vr = random.uniform(2, 5)
 
     def update(self, dt):
+        """Move every particle for this frame, apply its special behaviour (drag, wobble...) and drop those that expired or fell off the bottom."""
         alive = []
         for p in self.items:
             p.life -= dt
             if p.life <= 0:
                 continue
             k = p.kind
+            # Every kind of particle falls (or rises, if grav is negative); some also get drag or wobble below.
             p.vy += GRAVITY * p.grav * dt
             if k == "smoke":
                 p.vx *= 0.96
@@ -280,10 +301,12 @@ class Particles:
         self.items = alive
 
     def draw(self, surf, add):
+        """Draw all particles. `surf` is the normal layer; `add` is the glow layer, whose colours are added on top so things shine."""
         line, circle = pygame.draw.line, pygame.draw.circle
         for p in self.items:
             k = p.kind
             t = p.life / p.max
+            # `t` runs from 1 (just born) to 0 (about to vanish). Each kind of particle below is drawn differently.
             if k == "drop":
                 col, c2 = p.color, p.c2
                 if p.size >= 2.8:  # heavy drop: shrinks away and sinks into the dark wall instead of popping off
@@ -370,6 +393,7 @@ class Particles:
                 surf.blit(img, img.get_rect(center=(p.x, p.y)))
 
 
+# Cache of stain pictures (they are costly to build).
 _STAIN_CACHE = {}
 
 
@@ -378,6 +402,7 @@ def wet_stain(color, r, variant):
     Drawn at 2x and smoothed down so the edge is soft. Drips are grown live by Stains."""
     key = (color, r, variant)
     if key not in _STAIN_CACHE:
+        # A seeded random generator, so the same stain recipe always looks the same and can be cached.
         rng = random.Random(hash(key) & 0xFFFF)
         k = 2  # supersample
         size = int(r * 5)
@@ -421,17 +446,20 @@ class Stains:
         self.items = []
 
     def add(self, color, r, x, y):
+        """Splash a new stain at (x, y); only the newest 30 are kept."""
         img, drips = wet_stain(color, r, random.randrange(3))
         self.items.append([img.copy(), drips, x, y, 0.0, (*shade(color, 0.6), 170)])
         if len(self.items) > 30:
             self.items.pop(0)
 
     def update(self, dt):
+        """Age every stain and remove the ones that have fully faded."""
         for s in self.items:
             s[4] += dt
         self.items = [s for s in self.items if s[4] < self.GROW + self.FADE]
 
     def draw(self, surf):
+        """Draw the stains, growing their drips at first and fading them out later."""
         for img, drips, x, y, age, col in self.items:
             if age < self.GROW + 0.05:  # drips only grow, so redrawing them on the copy each frame is idempotent
                 e = 1 - (1 - min(1.0, age / self.GROW)) ** 3
@@ -447,22 +475,28 @@ class Stains:
 
 
 class Trail:
+    """The glowing ribbon that follows the blade. Keeps recent mouse positions, which expire after LIFE seconds."""
     LIFE = 0.13
 
     def __init__(self):
+        """Start with no points."""
         self.pts = deque()
 
     def add(self, x, y, t):
+        """Record a point on the trail at time t."""
         self.pts.append((x, y, t))
 
     def cut(self):
+        """Insert a gap so two separate swipes are not joined by a line."""
         self.pts.append(None)  # break between swipes
 
     def update(self, now):
+        """Throw away points older than LIFE seconds."""
         while self.pts and (self.pts[0] is None or now - self.pts[0][2] > self.LIFE):
             self.pts.popleft()
 
     def runs(self):
+        """Split the points into separate continuous swipes (each needs at least 2 points to draw)."""
         runs, cur = [], []
         for p in self.pts:
             if p is None:
@@ -500,18 +534,23 @@ class Trail:
 
 
 class Shake:
+    """Screen shake using the "trauma" idea: hits add trauma, it drains over time, and the shake grows with trauma squared so small bumps are gentle."""
     def __init__(self):
+        """Start calm."""
         self.trauma = 0.0
         self.t = 0.0
 
     def kick(self, amount):
+        """Add trauma (0 to 1 scale) for a bump."""
         self.trauma = min(1.0, self.trauma + amount)
 
     def update(self, dt):
+        """Let time pass and the trauma calm down."""
         self.t += dt
         self.trauma = max(0.0, self.trauma - dt * 1.6)
 
     def offset(self):
+        """How far (x, y in pixels) to nudge the picture right now. Mixed sine waves of different speeds look random but are smooth."""
         k = self.trauma ** 2 * 26
         return (k * math.sin(self.t * 71.3) * math.cos(self.t * 13.1), k * math.sin(self.t * 59.7 + 1.3))
 
@@ -520,21 +559,25 @@ class Popups:
     """Floating score numbers: Barlow numerals with a soft shadow, rising and fading."""
 
     def __init__(self, fonts):
+        """Start with no popups."""
         self.fonts = fonts
         self.items = []
 
     def add(self, text, x, y, color=WASHI, big=False):
+        """Float a new number at (x, y)."""
         f = self.fonts
         font = f.bonus if big else f.pop
         self.items.append([f.text(font, text, color), f.shadow(font, text), x, y, 0.0])
 
     def update(self, dt):
+        """Drift each popup upward, age it, and drop the old ones."""
         for p in self.items:
             p[3] -= 60 * dt
             p[4] += dt
         self.items = [p for p in self.items if p[4] < 0.9]
 
     def draw(self, surf):
+        """Draw popups, popping in quickly and fading near the end."""
         for img, sh, x, y, age in self.items:
             a = int(255 * min(1, age / 0.05, (0.9 - age) / 0.4))
             k = 1 + max(0, 0.12 - age) * 2.5  # a short pop in
@@ -562,10 +605,12 @@ def stamp_scale(age):
 class Stamp:
     """A hanko seal that slams onto the screen over its own ink bleed. The game's signature beat."""
 
+    # DUR is how long the stamp stays (seconds); LAND is the moment it hits the paper.
     DUR = 1.4
     LAND = 0.11
 
     def __init__(self, art, glyph, caption, x, y, size=120, color=WASHI, bonus=None, hold=False):
+        """Prepare the seal picture, its ink blot and caption text, and keep the position on screen (clamped so nothing is cut off)."""
         f = art.fonts
         self.seal = art.seal(glyph, size)
         self.blot = art.blot(size)
@@ -586,13 +631,16 @@ class Stamp:
         self._still = None  # the settled seal, rotated once instead of every frame
 
     def scale(self):
+        """Current size multiplier of the stamp animation."""
         return stamp_scale(self.age)
 
     def update(self, dt):
+        """Age the stamp; returns False once it should be removed."""
         self.age += dt
         return self.hold or self.age < self.DUR
 
     def draw(self, surf):
+        """Draw ink blot, then the seal, then the caption text sliding in under it."""
         a = self.age
         fade = 1.0 if self.hold else min(1.0, (self.DUR - a) / 0.35)
         if a >= self.LAND:  # the ink bleeds out from under the stone on impact

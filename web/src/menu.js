@@ -1,3 +1,6 @@
+// menu.js - the main menu and the fruit you slice to choose a game mode.
+// There are no buttons: each mode is a floating fruit, and cutting it starts that mode.
+// Also defines Scene, the tiny base class every screen (menu, play, results) builds on.
 // The menu, and the fruit you cut to choose (SliceButton, Menu in ninja/game.py). Menus in this dojo have no buttons.
 import { W, H, GOLD, WASHI, MUTED, BLADES, MODES } from "./config.js";
 import { uniform, rgb } from "./util.js";
@@ -9,6 +12,12 @@ import { World } from "./world.js";
 import { TitleIntro } from "./title.js";
 import { drawIcons, hitIcon } from "./hud.js";
 
+// A "scene" is one screen of the game. The App calls these methods every frame on whichever scene is active.
+// The base versions do nothing; each real screen overrides the ones it needs.
+//   handle(e)      react to one input event (see input.js)
+//   update(dt)     move things forward by dt seconds
+//   draw()         paint the screen
+//   focusLost()    the player switched away (pause, etc.)
 export class Scene {
   handle() {}
   update() {}
@@ -18,6 +27,8 @@ export class Scene {
   drawScreenFx() {} // over the finished picture, under the UI: colour grades, glows
 }
 
+// Constructor arguments: world = the World it lives in, kind = which fruit, x/y = position on the stage,
+// glyph/title/sub/sub2 = the seal symbol and the text lines drawn under it, ring = click/hover radius in pixels.
 /** A fruit you cut to choose. */
 export class SliceButton {
   constructor(world, kind, x, y, glyph, title, sub = "", sub2 = "", ring = 80) {
@@ -25,7 +36,9 @@ export class SliceButton {
     this.x = x; this.y = y;
     this.glyph = glyph; this.title = title; this.sub = sub; this.sub2 = sub2;
     this.ring = ring;
+    // The fruit itself is a real World body, flagged static so gravity leaves it floating.
     this.body = world.throw(kind, x, y, 0, 0, true);
+    // Random start time, so the four fruits bob up and down out of step with each other.
     this.t = uniform(0, 6);
     this.cutAt = null;
     this.hover = 0;
@@ -36,13 +49,18 @@ export class SliceButton {
     return this.body.alive && Math.hypot(x - this.x, y - this.y) < this.ring;
   }
 
+  // segments are the blade's recent line pieces [ax, ay, bx, by]; mouse is the pointer position (or null).
+  // Returns true on the frame the fruit gets cut.
   update(dt, segments, mouse = null) {
     this.t += dt;
+    // The hover glow fades in quickly (6/s) and out a bit slower (4/s).
     const near = mouse !== null && Math.hypot(mouse[0] - this.x, mouse[1] - this.y) < this.ring + 20;
     this.hover = near ? Math.min(1, this.hover + dt * 6) : Math.max(0, this.hover - dt * 4);
     if (this.body.alive) {
+      // A gentle 4-pixel bob so the fruit feels alive.
       this.body.y = this.y + Math.sin(this.t * 1.8) * 4;
       for (const seg of segments) {
+        // Hit test: does the blade piece cross the fruit? The circle is 25% bigger than the fruit to be forgiving.
         if (segHitsCircle(...seg, this.body.x, this.body.y, this.body.r * 1.25)) {
           this.cut(...seg);
           return true;
@@ -61,6 +79,7 @@ export class SliceButton {
     this.cutAt = this.t;
   }
 
+  // Draws the ring, the seal symbol and the labels. `ui` is the 2D canvas context for the interface layer.
   draw(ui) {
     const f = this.world.art.fonts, R = this.ring;
     const ring = hairlineRing(R);
@@ -79,6 +98,7 @@ export class SliceButton {
   }
 }
 
+// The main menu scene: four mode fruits, a blade picker and some hint text.
 export class Menu extends Scene {
   constructor(app) {
     super();
@@ -87,6 +107,7 @@ export class Menu extends Scene {
     this.w = new World(app);
     const best = app.save.best;
     this.buttons = [];
+    // Which fruit goes with which mode. The x positions (17%, 39%, 61%, 83% of the width) space them evenly.
     const spec = [["classic", "watermelon"], ["arcade", "dragonfruit"], ["zen", "peach"], ["path", "golden"]];
     spec.forEach(([mode, kind], i) => {
       const m = MODES[mode];
@@ -103,6 +124,7 @@ export class Menu extends Scene {
     this.intro = new TitleIntro(app, this.w);
   }
 
+  // True once the opening title animation (title.js) has finished.
   get introDone() { return this.intro.done; }
 
   /** Entry drift (1.04x -> 1.0x of rest scale, eased) then a gentle parallax against the pointer. */
@@ -112,11 +134,13 @@ export class Menu extends Scene {
     this.w.bgDraw = { scale: this.bgBase * k, dx: -this.par[0], dy: -this.par[1] };
   }
 
+  // Blades unlock when your best score in any mode reaches the blade's threshold (item 3 of its config).
   unlocked() {
     const top = Math.max(...Object.values(this.app.save.best));
     return Object.entries(BLADES).filter(([, b]) => top >= b[3]).map(([n]) => n);
   }
 
+  // Switch to the next (step 1) or previous (step -1) blade, skipping ones still locked, and save the choice.
   cycleBlade(step) {
     const names = Object.keys(BLADES);
     let i = names.indexOf(this.app.save.blade);
@@ -130,11 +154,13 @@ export class Menu extends Scene {
     this.app.audio.play("swoosh", 0.6);
   }
 
+  // Pick a mode: cut its fruit and remember the choice; update() starts the game after a short pause.
   choose(b) {
     b.cut();
     this.chosen = b.mode; this.chosenT = 0;
   }
 
+  // Reads input events: number keys 1-4 start a mode, arrows or A/D change blade, the wheel changes blade, a click or tap picks a fruit.
   handle(e) {
     if (e.type === "key") {
       this.intro.skip(); // any key skips the intro (and still does what it does)
@@ -156,14 +182,18 @@ export class Menu extends Scene {
     }
   }
 
+  // The little fullscreen and mute buttons in the top-right corner.
   icons() {
     return [{ name: "full", cx: W - 44, cy: 40 }, { name: "mute", cx: W - 96, cy: 40 }];
   }
 
+  // Runs every frame: parallax background, intro, fruit cutting, then starting the game once a choice is made.
   update(dt) {
     this.t += dt;
     const [mx, my] = this.app.mouse;
+    // Parallax: the wall shifts slightly opposite to the pointer, like a layer far behind the fruit.
     const tx = -(mx / W - 0.5) * 20, ty = -(my / H - 0.5) * 20; // +-10 px, against the pointer like a deeper layer
+    // Move only part of the way toward the target each frame, so the motion eases instead of jumping.
     const k = Math.min(1.0, dt * 3);
     this.par[0] += (tx - this.par[0]) * k;
     this.par[1] += (ty - this.par[1]) * k;
@@ -178,6 +208,7 @@ export class Menu extends Scene {
     }
     if (this.chosen) {
       this.chosenT += dt;
+      // Wait 0.6s so the player sees the fruit burst before the scene changes.
       if (this.chosenT > 0.6) {
         const mode = this.chosen;
         this.chosen = null;
@@ -186,6 +217,7 @@ export class Menu extends Scene {
     }
   }
 
+  // Paints the world first, then the intro, the fruit labels and the blade picker on the UI layer.
   draw() {
     const f = this.app.art.fonts, ui = this.app.ui;
     this.w.draw((L, add) => this.intro.drawWorld(L, add));

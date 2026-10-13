@@ -1,11 +1,18 @@
 // Canvas drawing helpers: the JavaScript counterparts of pygame's blit / rotozoom / draw.* and the cached
 // glow images the effects add onto the emissive layer.
+// These small functions wrap the browser's 2D canvas API (ctx = a canvas drawing context).
+// Colours are [r, g, b] arrays (0-255) or CSS strings like "#fff". Angles for sprites are in degrees.
+// The "glow" helpers make additive images: a bright colour on black that is drawn with "lighter"
+// blending, which adds light instead of covering what is underneath. Results are cached in Maps
+// (key -> canvas) because building a gradient every frame would be slow.
 import { rgb, shade, TAU } from "./util.js";
 
+// Shared drawing settings other files read.
 export const gfx = {
   RS: 1, // render scale of text and UI (crisp on big or HiDPI screens); the world layers stay at 1
 };
 
+// Creates an off-screen canvas (an invisible drawing surface); size is at least 1x1 pixel.
 export function makeCanvas(w, h) {
   const c = document.createElement("canvas");
   c.width = Math.max(1, Math.round(w));
@@ -13,6 +20,7 @@ export function makeCanvas(w, h) {
   return c;
 }
 
+// Shortcut: the 2D drawing context of a canvas.
 export const getCtx = (c) => c.getContext("2d");
 
 /** Draw `img` centred at (x, y), turned `angDeg` counter-clockwise (pygame's rotozoom) and scaled by s. */
@@ -26,6 +34,7 @@ export function drawSprite(ctx, img, x, y, angDeg, s = 1, alpha = 1) {
   ctx.restore();
 }
 
+// Draws a circle: filled by default, or just an outline when lineW > 0 (px).
 export function circle(ctx, x, y, r, color, lineW = 0) {
   if (r <= 0) return;
   ctx.beginPath();
@@ -34,6 +43,7 @@ export function circle(ctx, x, y, r, color, lineW = 0) {
   else { ctx.fillStyle = typeof color === "string" ? color : rgb(color); ctx.fill(); }
 }
 
+// Draws a straight line from (x0, y0) to (x1, y1), w px wide.
 export function line(ctx, x0, y0, x1, y1, color, w = 1) {
   ctx.strokeStyle = typeof color === "string" ? color : rgb(color);
   ctx.lineWidth = w;
@@ -43,6 +53,7 @@ export function line(ctx, x0, y0, x1, y1, color, w = 1) {
   ctx.stroke();
 }
 
+// Draws connected lines through a list of [x, y] points; closed = also join the last point back to the first.
 export function polyline(ctx, pts, color, w = 1, closed = false) {
   ctx.strokeStyle = typeof color === "string" ? color : rgb(color);
   ctx.lineWidth = w;
@@ -53,6 +64,7 @@ export function polyline(ctx, pts, color, w = 1, closed = false) {
   ctx.stroke();
 }
 
+// Fills a closed shape made from a list of [x, y] points.
 export function polygon(ctx, pts, color) {
   ctx.fillStyle = typeof color === "string" ? color : rgb(color);
   ctx.beginPath();
@@ -89,6 +101,7 @@ export function makeShadow(img, alpha = 90) {
   g.globalCompositeOperation = "source-in";
   g.fillStyle = "#000";
   g.fillRect(0, 0, w, h);
+  // Shrinking to 1/4 size (w >> 2 is a fast integer divide by 4) and stretching back is a cheap blur.
   const small = makeCanvas(Math.max(1, w >> 2), Math.max(1, h >> 2));
   getCtx(small).drawImage(sil, 0, 0, small.width, small.height);
   const out = makeCanvas(w, h);
@@ -116,10 +129,12 @@ export function tinted(img, k, color) {
 
 // ---- cached additive images: opaque colour on black, drawn with 'lighter' ----
 
+// Cache for glowImg, keyed by radius|colour|brightness.
 const GLOWS = new Map();
 
 /** A soft additive glow at brightness k. Radius and k are quantised so the cache stays small. */
 export function glowImg(radius, color, k) {
+  // Rounding radius (to steps of 3) and brightness (to 1/16) means a few cached images get reused instead of thousands of near-duplicates.
   radius = Math.max(2, Math.trunc(radius / 3) * 3);
   k = Math.round(Math.max(0, Math.min(1, k)) * 16) / 16;
   const key = `${radius}|${color[0]},${color[1]},${color[2]}|${k}`;
@@ -131,6 +146,8 @@ export function glowImg(radius, color, k) {
     g.fillStyle = "#000";
     g.fillRect(0, 0, d, d);
     const gr = g.createRadialGradient(d / 2, d / 2, 0, d / 2, d / 2, radius);
+    // A radial gradient is a colour that changes with distance from the centre. We add 14 stops, with
+    // brightness falling off as t*t (smoother than a straight line) so the glow has no hard edge.
     const steps = 14;
     for (let i = 0; i <= steps; i++) {
       const rho = i / steps; // distance from the centre, 0..1
@@ -141,6 +158,7 @@ export function glowImg(radius, color, k) {
     g.beginPath();
     g.arc(d / 2, d / 2, radius, 0, TAU);
     g.fill();
+    // Safety valve: if the cache grows too big, empty it so memory stays bounded.
     if (GLOWS.size > 400) GLOWS.clear();
     GLOWS.set(key, c);
   }
@@ -153,6 +171,7 @@ export function addGlow(add, radius, color, k, x, y) {
   add.drawImage(g, x - g.width / 2, y - g.height / 2);
 }
 
+// Cache for rayBurst.
 const RAYS = new Map();
 
 /** Six soft light rays on black (for additive blending), fading out from the centre. */
@@ -168,6 +187,7 @@ export function rayBurst(radius, color) {
     const m = d / 2;
     for (let k = 0; k < 6; k++) {
       const a = (k * TAU) / 6;
+      // 8 wedges per ray, from wide-and-dim to thin-and-bright, stack into a ray that glows along its core.
       for (let i = 0; i < 8; i++) { // stacked wedges: dim and wide outside, bright and thin in the middle
         const t = i / 7;
         const h = 0.16 * (1 - t) + 0.025;
@@ -176,6 +196,7 @@ export function rayBurst(radius, color) {
       }
     }
     g.globalCompositeOperation = "multiply"; // radial falloff; dim at the very centre so rays don't stripe the fruit
+    // Multiply by a radial gradient (white = keep, black = remove) so rays fade away toward the rim and the centre.
     const gr = g.createRadialGradient(m, m, 0, m, m, radius);
     for (let i = 0; i <= 12; i++) {
       const rho = i / 12;
@@ -191,6 +212,7 @@ export function rayBurst(radius, color) {
   return c;
 }
 
+// Cache for softImg.
 const SOFT = new Map();
 
 /** A soft round puff, tinted, translucent (smoke). */
@@ -221,6 +243,8 @@ export function catmullRom(pts, sub = 4) {
   const out = [];
   const dims = pts[0].length;
   for (let i = 0; i < n - 1; i++) {
+    // p1 and p2 are the segment's ends; p0 and p3 are their neighbours, which set the curve's direction there.
+    // The long formula below is the standard cubic blend of them, evaluated at u (0..1) between p1 and p2.
     const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n - 1, i + 2)];
     for (let s = 0; s < sub; s++) {
       const u = s / sub, u2 = u * u, u3 = u2 * u;

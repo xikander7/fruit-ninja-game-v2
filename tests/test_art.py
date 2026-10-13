@@ -1,9 +1,12 @@
+"""Art tests: sprites load with the right size and transparency, splashes are tinted and cached,
+and a drawn fallback takes over when the image files are missing."""
 import importlib.util
 import os
 import tempfile
 import unittest
 from pathlib import Path
 
+# Run without a window, sound card or GPU so the tests work on any machine (including a build server).
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 os.environ.setdefault("NINJA_NO_GPU", "1")
@@ -17,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def load_build_sprites():
+    """Import tools/build_sprites.py as a module (tools/ is not a package) so a test can call its functions."""
     spec = importlib.util.spec_from_file_location("build_sprites", ROOT / "tools" / "build_sprites.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -24,11 +28,14 @@ def load_build_sprites():
 
 
 class SpriteArtTests(unittest.TestCase):
+    """Fruit sprites are loaded at the right size, and the game still works without the image files."""
     @classmethod
     def setUpClass(cls):
+        """Start pygame once; loading images needs a (tiny, hidden) display."""
         pygame.init()
         pygame.display.set_mode((1, 1))
 
+    # Proves: every fruit has see-through (alpha) whole and half sprites at the expected size.
     def test_loaded_sprites_have_alpha_and_size(self):
         a = Art()
         for name, ft in FRUITS.items():
@@ -41,6 +48,7 @@ class SpriteArtTests(unittest.TestCase):
         self.assertEqual(a.bg.get_size(), (1280, 720))
         self.assertLess(a.bomb_tip[1], 0)  # fuse end is above the centre
 
+    # Proves: with no sprite folder the game draws its own fruit instead of crashing.
     def test_procedural_fallback_when_sprites_missing(self):
         old = art.SPRITE_DIR
         with tempfile.TemporaryDirectory() as d:
@@ -55,11 +63,14 @@ class SpriteArtTests(unittest.TestCase):
 
 
 class SplashTests(unittest.TestCase):
+    """Juice-splash sprites: loading, keying out the black background, and colour tinting."""
     @classmethod
     def setUpClass(cls):
+        """Start pygame once; loading images needs a (tiny, hidden) display."""
         pygame.init()
         pygame.display.set_mode((1, 1))
 
+    # Proves: all four splash images load, are 300 px on the long side, and have a transparent background.
     def test_splash_sprites_load_with_alpha(self):
         a = Art()
         self.assertEqual(len(a.splashes), 4)
@@ -71,6 +82,7 @@ class SplashTests(unittest.TestCase):
             self.assertEqual(min(alphas), 0)  # the black studio background keyed out
             self.assertGreaterEqual(max(alphas), 250)  # the milk body is opaque (smoothscale rounds 255 down a hair)
 
+    # Proves: build_sprites turns black into transparent and white into opaque (brightness becomes opacity).
     def test_black_keys_to_transparent(self):
         bs = load_build_sprites()
         src = pygame.Surface((4, 1))
@@ -83,6 +95,7 @@ class SplashTests(unittest.TestCase):
         self.assertEqual(tuple(out.get_at((2, 0))), (100, 100, 100, round(88 * 1.6)))
         self.assertEqual(tuple(out.get_at((3, 0))), (255, 255, 255, 255))
 
+    # Proves: the same colour and similar angle reuse one cached image, and the splash is tinted to the juice colour.
     def test_tinted_splash_is_cached_per_colour_and_step(self):
         a = Art()
         red = a.splash(1, (225, 35, 55), 31)
@@ -95,18 +108,22 @@ class SplashTests(unittest.TestCase):
 
 
 class SplashCutTests(unittest.TestCase):
+    """What happens to splashes and juice drops when a fruit is cut."""
     def setUp(self):
+        """Use a throwaway save file and start a fresh game for each test."""
         self.tmp = tempfile.TemporaryDirectory()
         self.old_save = game.SAVE_PATH
         game.SAVE_PATH = Path(self.tmp.name) / "save.json"
         self.app = game.App()
 
     def tearDown(self):
+        """Shut pygame down and delete the temporary save folder."""
         game.SAVE_PATH = self.old_save
         pygame.quit()
         self.tmp.cleanup()
 
     def cut_one(self):
+        """Cut one orange and return (number of splashes, number of drops) that appeared."""
         w = game.World(self.app)
         w.particles.items = []  # drop the ambient dust so only the cut's particles remain
         b = w.throw("orange", 640, 360, 0, 0)
@@ -114,17 +131,20 @@ class SplashCutTests(unittest.TestCase):
         kinds = [p.kind for p in w.particles.items]
         return kinds.count("splash"), kinds.count("drop")
 
+    # Proves: one cut makes one splash, and the fine spray is halved to keep the screen light.
     def test_cut_spawns_one_splash(self):
         splashes, drops = self.cut_one()
         self.assertEqual(splashes, 1)
         self.assertEqual(drops, 5 + 35 // 2 + 16)  # heavy drops kept, fine spray halved, both jets kept
 
+    # Proves: without splash sprites the cut falls back to the full spray of drops.
     def test_no_splash_without_sprites(self):
         self.app.art.splashes, self.app.art.splash_dirs = [], []
         splashes, drops = self.cut_one()
         self.assertEqual(splashes, 0)
         self.assertEqual(drops, 5 + 35 + 16)  # the full spray
 
+    # Proves: splashes shoot out sideways from the blade's path (never along it), and about a quarter are the crown shape.
     def test_splash_flies_along_the_cut_normal(self):
         import math
         import random
@@ -148,14 +168,18 @@ class SplashCutTests(unittest.TestCase):
 
 
 class NewAssets(unittest.TestCase):
+    """Sprites added later: golden and chaos fruit, bosses, the shuriken and the ice bomb."""
     @classmethod
     def setUpClass(cls):
+        """Start pygame once; loading images needs a (tiny, hidden) display."""
         pygame.init()
         pygame.display.set_mode((1, 1))
 
     def setUp(self):
+        """Load a fresh set of art for each test."""
         self.art = Art()
 
+    # Proves: golden and chaos fruit exist with sprites, but never appear in ordinary waves.
     def test_new_fruit_types_exist_but_are_not_regular(self):
         for k in ("golden", "chaos"):
             self.assertIn(k, art.FRUITS)
@@ -164,6 +188,7 @@ class NewAssets(unittest.TestCase):
             self.assertTrue(fa.whole.get_flags() & pygame.SRCALPHA)
             self.assertEqual(fa.half_local, 270)
 
+    # Proves: boss, shuriken and ice-bomb sprites exist and are the expected size.
     def test_boss_and_hazard_sprites(self):
         for k in ("durian", "pineapple"):
             img = self.art.boss[k]
@@ -172,11 +197,13 @@ class NewAssets(unittest.TestCase):
         self.assertTrue(self.art.icebomb.get_flags() & pygame.SRCALPHA)
         self.assertTrue(self.art.icebomb_shadow.get_flags() & pygame.SRCALPHA)
 
+    # Proves: cut halves of the special fruit are not drawn bigger than the whole fruit.
     def test_special_halves_are_not_oversized(self):
         for k in ("golden", "chaos"):
             fa = self.art.fruits[k]
             self.assertLessEqual(max(fa.half.get_size()), 1.15 * max(fa.whole.get_size()), k)
 
+    # Proves: the new sprites also have drawn fallbacks when the sprite folder is empty.
     def test_fallbacks_without_sprite_dir(self):
         old = art.SPRITE_DIR
         art.SPRITE_DIR = tempfile.mkdtemp()

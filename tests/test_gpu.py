@@ -6,6 +6,7 @@ os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 import pygame  # noqa: E402
 
+# Try to create an OpenGL context without a window. If this machine can't, CTX stays None and the GPU tests are skipped.
 try:
     import moderngl
     CTX = moderngl.create_standalone_context()
@@ -19,20 +20,25 @@ VIEW = (0, 0, W, H)
 
 @unittest.skipIf(CTX is None, "no standalone OpenGL context")
 class PostFXRender(unittest.TestCase):
+    """Renders the screen-effects shader into an offscreen image and checks the pixels."""
     def setUp(self):
+        """Create the effects renderer and an offscreen framebuffer to draw into."""
         from ninja.gpu import PostFX
         self.fx = PostFX(CTX)
         self.fbo = CTX.simple_framebuffer((W, H), components=3)
 
     def tearDown(self):
+        """Free the GPU objects."""
         self.fx.release()
         self.fbo.release()
 
     def render(self, base, emissive, params=None):
+        """Draw one frame through the effects and return it as a pygame image."""
         self.fx.render(base, emissive, params or {}, VIEW, target=self.fbo)
         img = pygame.image.frombytes(self.fbo.read(components=3), (W, H), "RGB")
         return pygame.transform.flip(img, False, True)  # GL rows are bottom-up; back to screen coords
 
+    # Proves: a bright square glows into its surroundings (bloom) while the far corners stay dark.
     def test_bloom_spreads_but_corners_stay_dark(self):
         base, lit, unlit = pygame.Surface((W, H)), pygame.Surface((W, H)), pygame.Surface((W, H))
         lit.fill((255, 255, 255), (W // 2 - 4, H // 2 - 4, 8, 8))
@@ -42,6 +48,7 @@ class PostFXRender(unittest.TestCase):
         off = self.render(base, unlit)
 
         def patch(img, x, y):  # 5x5 mean, so one grain speck can't decide the result
+            """Average brightness of a 5x5 pixel area."""
             return sum(img.get_at((x + i, y + j))[0] for i in range(-2, 3) for j in range(-2, 3)) / 25
 
         x, y = W // 2 + 4 + 20, H // 2  # 20 px right of the square
@@ -49,6 +56,7 @@ class PostFXRender(unittest.TestCase):
         self.assertGreater(patch(on, x, y), patch(off, x, y) + 0.5)
         self.assertLess(on.get_at((2, 2))[0], 30)
 
+    # Proves: the colour grading leaves a mid-grey roughly unchanged.
     def test_mid_grey_survives_tonemap(self):
         base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
         base.fill((128, 128, 128))
@@ -56,11 +64,13 @@ class PostFXRender(unittest.TestCase):
         for c in (r, g, b):
             self.assertAlmostEqual(c, 128, delta=12)
 
+    # Proves: zooming in pushes things away from the centre of the screen.
     def test_zoom_moves_marker_outward(self):
         base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
         base.fill((255, 255, 255), (W // 2 + 200 - 3, H // 2 - 3, 6, 6))  # marker 200 px right of centre
 
         def marker_x(params):
+            """Return the x position of the white marker after rendering with the given effects."""
             out = self.render(base, emissive, params)
             row = [out.get_at((x, H // 2))[0] for x in range(W // 2, W)]
             return W // 2 + row.index(max(row))
@@ -68,6 +78,7 @@ class PostFXRender(unittest.TestCase):
         self.assertAlmostEqual(marker_x({}), W // 2 + 200, delta=3)
         self.assertAlmostEqual(marker_x({"zoom": 1.2}), W // 2 + 240, delta=4)
 
+    # Proves: a shockwave ring only bends the picture near the ring, not inside or far outside it.
     def test_shock_displaces_pixels_near_the_ring_only(self):
         base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
         for x in range(0, W, 8):  # fine vertical stripes: any horizontal displacement changes pixels
@@ -78,6 +89,7 @@ class PostFXRender(unittest.TestCase):
         shocked = self.render(base, emissive, {"shocks": [(0.5, 0.5, 0.2, 0.04)]})
 
         def diff(x0, x1):
+            """Total brightness difference between the plain and shocked image across a range of columns."""
             return sum(abs(plain.get_at((x, H // 2))[0] - shocked.get_at((x, H // 2))[0]) for x in range(x0, x1))
 
         ring = W // 2 + round(0.2 * H)  # radius is in units of screen height
@@ -85,6 +97,7 @@ class PostFXRender(unittest.TestCase):
         self.assertLess(diff(W // 2 + 320, W // 2 + 400), 50)  # well outside the ring: untouched
         self.assertLess(diff(W // 2 - 30, W // 2 + 30), 50)  # inside the ring: untouched
 
+    # Proves: the white flash effect makes the picture much brighter.
     def test_flash_brightens(self):
         base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
         base.fill((60, 60, 60))
@@ -95,6 +108,7 @@ class PostFXRender(unittest.TestCase):
         for a, b in zip(off[:3], on[:3]):
             self.assertGreater(b, a + 100)
 
+    # Proves: OpenGL's upside-down image is flipped back, so top stays top.
     def test_image_is_not_upside_down(self):
         base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
         base.fill((255, 255, 255), (W // 2 - 10, 100, 20, 20))  # near the top in pygame coords
@@ -104,10 +118,12 @@ class PostFXRender(unittest.TestCase):
 
 
     def render_ui(self, base, emissive, params, ui):
+        """Like render(), but also draws a separate UI layer on top."""
         self.fx.render(base, emissive, params, VIEW, target=self.fbo, ui=ui)
         img = pygame.image.frombytes(self.fbo.read(components=3), (W, H), "RGB")
         return pygame.transform.flip(img, False, True)
 
+    # Proves: the HUD layer is drawn crisp and untouched (no zoom, tint, grain or colour fringes), while the world still gets the effects.
     def test_ui_layer_skips_every_post_effect(self):
         base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
         base.fill((90, 90, 90))
@@ -128,6 +144,7 @@ class PostFXRender(unittest.TestCase):
         row = [bare.get_at((x, H // 2))[0] for x in range(W // 2, W)]
         self.assertGreater(row.index(max(row)), 220)
 
+    # Proves: half-see-through UI pixels blend correctly with the picture underneath.
     def test_half_transparent_ui_is_premultiplied_alpha_over(self):
         base, emissive = pygame.Surface((W, H)), pygame.Surface((W, H))
         ui = pygame.Surface((W, H), pygame.SRCALPHA)
@@ -140,6 +157,8 @@ class PostFXRender(unittest.TestCase):
 
 @unittest.skipIf(CTX is None, "no standalone OpenGL context")
 class Lifetime(unittest.TestCase):
+    """GPU objects are cleaned up properly."""
+    # Proves: PostFX frees an OpenGL context it made itself, but leaves one that was lent to it alone.
     def test_release_frees_a_context_it_created_but_not_a_borrowed_one(self):
         from unittest import mock
         from ninja.gpu import PostFX
@@ -156,6 +175,8 @@ class Lifetime(unittest.TestCase):
 
 @unittest.skipIf(CTX is None, "no moderngl")
 class WindowMapping(unittest.TestCase):
+    """Converting between window pixels and the game's fixed 1280x720 screen."""
+    # Proves: the game picture is centred with black bars in odd-shaped windows, and mouse positions map back to game coordinates.
     def test_letterbox_and_to_logical(self):
         from ninja.gpu import letterbox, to_logical
         self.assertEqual(letterbox(0, 0, W, H), (0, 0, W, H))

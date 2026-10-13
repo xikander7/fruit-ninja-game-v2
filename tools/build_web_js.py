@@ -27,6 +27,7 @@ GROUPS = {"slash": "swoosh", "splat": "splat", "explode": "explode", "fuse": "fu
           "timestop": "timestop", "clones": "clones", "dragonfire": "dragonfire", "bosshit": "boss_hit",
           "bossroar": "boss_roar", "fever": "fever", "shuriken": "shuriken"}
 SKIP = {"music_2.wav", "fever_2.wav", "fuse_2.wav"}  # second takes of the long loops: ~2 MB less to download
+# Sounds above this pitch are removed before halving the sample rate; TARGET_RATE is the new (lower) rate.
 CUTOFF_HZ = 10000
 TARGET_RATE = 22050
 
@@ -37,7 +38,10 @@ def to_mono_22k(src, dst):
         ch, rate, width, n = w.getnchannels(), w.getframerate(), w.getsampwidth(), w.getnframes()
         data = np.frombuffer(w.readframes(n), dtype="<i2").astype(np.float64)
     assert width == 2, f"{src.name}: expected 16-bit audio"
+    # Average the left and right channels into a single mono channel.
     mono = data.reshape(-1, ch).mean(axis=1)
+    # Halving the sample rate: first cut the high frequencies (an FFT splits sound into its frequencies),
+    # then keep only the lower half of the spectrum, which is exactly the 22.05 kHz version of the sound.
     if rate != TARGET_RATE:
         assert rate == 2 * TARGET_RATE, f"{src.name}: expected 44.1 kHz, got {rate}"
         mono = mono[: len(mono) // 2 * 2]  # an even length halves exactly
@@ -55,10 +59,13 @@ def to_mono_22k(src, dst):
 
 
 def size_of(folder):
+    """Total size in bytes of all files inside a folder."""
     return sum(f.stat().st_size for f in folder.rglob("*") if f.is_file())
 
 
 def main():
+    """Copy the images and fonts, convert the sounds, and write the audio manifest for the browser."""
+    # Rebuild from scratch every time so deleted files don't linger in the output.
     if OUT.exists():
         shutil.rmtree(OUT)
     for sub in ("sprites", "glyphs", "boot"):  # never assets/raw: the source art is git-ignored and never ships
@@ -66,11 +73,13 @@ def main():
     (OUT / "fonts").mkdir(parents=True)
     for f in (SRC / "fonts").iterdir():
         shutil.copy2(f, OUT / "fonts" / f.name)
+    # The browser tab icon is the watermelon sprite.
     shutil.copy2(SRC / "sprites" / "watermelon.png", ROOT / "web" / "favicon.png")
     audio = OUT / "audio"
     audio.mkdir()
     groups = {}
     for f in sorted((SRC / "audio").glob("*.wav")):
+        # Sound files are named <group><digits>_<number>.wav (for example slash_3.wav); the letters choose the group.
         m = re.match(r"([a-z]+)\d*_\d+\.wav$", f.name)
         if f.name in SKIP or not m or m.group(1) not in GROUPS:
             continue

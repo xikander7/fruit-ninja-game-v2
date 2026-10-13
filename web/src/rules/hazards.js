@@ -1,17 +1,23 @@
+// rules/hazards.js - rules for the extra dangers and special fruit in Ninja Path mode. Part of rules/: pure game logic with no drawing and no browser code, so it can be tested directly in Node.
 // Ninja Path hazards and special fruit rules (ninja/hazards.py): shuriken, ice bomb, golden fruit, chaos fruit.
 import { W, H } from "../config.js";
 import { uniform, sign } from "../util.js";
 
+// Chance (0.08 = 8%) that any item in a wave is replaced by that hazard once the game is old enough.
 export const HAZARD_ODDS = { shuriken: 0.08, icebomb: 0.05, golden: 0.03, chaos: 0.03 };
 export const HAZARDS_FROM = 20.0; // s of game time before the first hazard
+// Tuning for shuriken (throwing stars): speed in px/s, hit and size radius in px; parry numbers are for knocking them back with the blade.
 export const SHURIKEN_SPEED = 700.0, SHURIKEN_HIT = 22.0, SHURIKEN_R = 26.0;
 export const PARRY_SPEED = 1500.0, PARRY_POINTS = 2, PARRY_BOOST = 1.3;
+// How long the ice bomb freezes your blade, and how long the chaos fruit flips gravity (seconds).
 export const FREEZE_TIME = 2.0, FLIP_TIME = 5.0;
+// The golden fruit takes several hits: GOLD_HITS of them, at least GOLD_GAP seconds apart, worth points each plus a bonus.
 export const GOLD_HITS = 5, GOLD_GAP = 0.08, GOLD_HIT_POINTS = 5, GOLD_BONUS = 25;
 export const ICE = [170, 215, 250];
 export const VIOLET = [170, 100, 255];
 export const ICE_BLADE = [[30, 60, 90], [80, 120, 155], [130, 165, 195], [120, 155, 185]]; // pale and dim: it cannot cut
 
+// Roll one random number and walk through the odds list like a number line; whichever slot it lands in wins.
 /** The hazard (or special fruit) to put in place of one wave item, or null. */
 export function rollHazard(rnd, gameTime) {
   if (gameTime < HAZARDS_FROM) return null;
@@ -23,6 +29,7 @@ export function rollHazard(rnd, gameTime) {
   return null;
 }
 
+// (x, y) is where it starts, (tx, ty) is where it is aimed. It flies in a straight line.
 /** A throwing star: straight at its target at 700 px/s, spinning, no gravity. */
 export class Shuriken {
   constructor(x, y, tx, ty) {
@@ -30,6 +37,7 @@ export class Shuriken {
     this.x = x; this.y = y;
     this.vx = ((tx - x) / d) * SHURIKEN_SPEED;
     this.vy = ((ty - y) / d) * SHURIKEN_SPEED;
+    // ang is rotation in degrees, spin is degrees per second. parried/struck are one-way flags.
     this.ang = uniform(0, 90); this.spin = sign() * 1260;
     this.parried = this.struck = false;
     this.trail = []; // recent positions, newest last
@@ -45,12 +53,14 @@ export class Shuriken {
     this.age += dt;
   }
 
+  // The `||` and `&&` mix means: past an edge AND moving further away, so a star just entering the screen is not removed.
   /** Off screen and still heading away (it starts just off an edge, heading in). left/right are the view's edges. */
   gone(left = 0, right = W) {
     return (this.x < left - 80 && this.vx <= 0 || this.x > right + 80 && this.vx >= 0 ||
       this.y < -80 && this.vy <= 0 || this.y > H + 80 && this.vy >= 0);
   }
 
+  // Is the point (px, py) close enough to touch it? Used for the player's pointer.
   near(px, py) {
     return Math.hypot(px - this.x, py - this.y) < SHURIKEN_HIT;
   }

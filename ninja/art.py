@@ -8,6 +8,8 @@ import pygame
 
 from .settings import W, H, WASHI, HANKO, LACQUER, CEDAR, STEEL, resource_path
 
+# Where the fruit/background pictures (sprites) live. If a picture is missing, the code below draws a stand-in with shapes ("procedural" art),
+# so the game always starts.
 SPRITE_DIR = str(resource_path("assets", "sprites"))
 LOADED = {"sprites": 0, "fonts": 0}  # files actually read (the packaged builds' smoke test reports these)
 # juice splash photos (tools/build_sprites.py) and the direction each one flings its liquid, in degrees counter-
@@ -19,11 +21,13 @@ SPLASH_GLINT = bytes(min(255, max(0, (v - 222) * 8)) for v in range(256))
 # and the cache is capped: up to 14 colours x 4 sprites x 24 angles of full-size copies would be hundreds of MB
 SPLASH_SCALE = 0.62
 SPLASH_CACHE = 64  # about 8 MB; a miss (tint + rotate) costs about 0.35 ms, so a lower hit rate is cheap
+# Anti-aliasing trick: procedural art is drawn SS times bigger, then shrunk with smoothing, which removes jagged edges.
 SS = 2  # supersample factor, smoothscaled down for anti-aliasing
 
 
 @dataclass
 class FruitType:
+    """The facts about one kind of fruit: its size (r = radius in pixels), colours, score value, shape and any special power."""
     name: str
     r: int
     skin: tuple
@@ -36,6 +40,7 @@ class FruitType:
     special: str = ""  # "", "freeze", "frenzy", "double"
 
 
+# The fruit catalogue. Colours are (red, green, blue). Order after the colours: points per cut, shape, special effect.
 FRUITS = {
     "watermelon": FruitType("watermelon", 56, (38, 110, 44), (110, 175, 70), (225, 240, 200), (232, 48, 62), (225, 35, 55)),
     "coconut": FruitType("coconut", 44, (100, 64, 38), (70, 44, 26), (245, 245, 238), (250, 250, 246), (240, 240, 235)),
@@ -55,16 +60,20 @@ FRUITS = {
     "golden": FruitType("golden", 40, (255, 200, 40), (180, 120, 10), (255, 240, 180), (255, 225, 120), (255, 210, 60), 5, "round", ""),
     "chaos": FruitType("chaos", 36, (120, 40, 200), (40, 220, 200), (230, 200, 255), (200, 140, 255), (170, 90, 255), 1, "round", ""),
 }
+# REGULAR fruits are the ordinary ones thrown in waves. WEIGHTS gives how often each appears (bigger = more common), in the same order.
+# SPECIALS are the three power-up bananas.
 REGULAR = ["watermelon", "coconut", "orange", "peach", "apple", "lemon", "kiwi", "plum", "strawberry", "banana", "dragonfruit"]
 WEIGHTS = [10, 6, 12, 9, 12, 9, 9, 8, 9, 6, 3]
 SPECIALS = ["freeze", "frenzy", "double"]
 
 
 def lerp(a, b, t):
+    """Blend colour a toward colour b (t=0 gives a, t=1 gives b)."""
     return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
 def shade_of(c, k):
+    """Make a colour darker (k<1) or brighter (k>1), kept within 0-255."""
     return tuple(max(0, min(255, int(v * k))) for v in c)
 
 
@@ -85,6 +94,7 @@ def _font(file, size, fallback, bold=False):
 
 
 class Fonts:
+    """All the text fonts the game uses, created once. Also draws text and shadows, caching them because text is slow to render."""
     DISPLAY = ("CormorantSC-Bold.ttf", "georgia,timesnewroman,dejavuserif", True)  # titles, captions
     NUM = ("BarlowCondensed-SemiBold.ttf", "bahnschrift,arialnarrow,dejavusanscondensed", True)  # numerals, HUD
     MONO = ("IBMPlexMono-Regular.ttf", "consolas,dejavusansmono,couriernew", False)  # small utility labels
@@ -149,9 +159,12 @@ class Fonts:
         return img
 
 
+# The procedural fruit builder. A "mask" is a picture where white means the fruit is here and black/clear means empty,
+# used to cut each fruit's outline from a coloured square.
 # ---------- shape masks (white = inside) ----------
 
 def _shape_mask(ft, size):
+    """Draw the fruit's outline in white on a clear square: circles for round fruit, ellipses for ovals, and so on."""
     s = pygame.Surface((size, size), pygame.SRCALPHA)
     c = size / 2
     r = ft.r * SS
@@ -179,11 +192,13 @@ def _shape_mask(ft, size):
 
 
 def _banana_circles(c, r):
+    """A banana is a big circle with a second circle cut out of it, leaving a crescent. Returns both circles."""
     # crescent = big circle minus offset circle
     return [(c, c - r * 0.35, r * 1.05, (255, 255, 255, 255)), (c, c - r * 1.0, r * 1.15, (0, 0, 0, 0))]
 
 
 def _banana_tips(c, r):
+    """Where the two banana circles cross, i.e. the points at each end of the crescent (stem and tip)."""
     # intersection of the two crescent circles, in circle-1-local coords (circle 2 sits d above)
     r1, r2, d = r * 1.05, r * 1.15, r * 0.65
     y = (r2 * r2 - r1 * r1 - d * d) / (2 * d)
@@ -193,6 +208,7 @@ def _banana_tips(c, r):
 
 
 def _sphere_shade(size, strength=1.0):
+    """A grey ball-shaped gradient, light at the top-left and dark at the edge. Multiplied onto a fruit it makes it look round and 3D."""
     s = pygame.Surface((size, size))
     s.fill((255, 255, 255))
     c = size / 2
@@ -207,6 +223,7 @@ def _sphere_shade(size, strength=1.0):
 
 
 def _highlight(size, cx, cy, rad, peak=120):
+    """A soft white glow spot, added onto the fruit to make a shiny reflection."""
     s = pygame.Surface((size, size))
     n = 20
     for i in range(n):
@@ -216,9 +233,11 @@ def _highlight(size, cx, cy, rad, peak=120):
     return s
 
 
+# Per-fruit decorations.
 # ---------- skin details ----------
 
 def _details(ft, s, c, r, rng):
+    """Paint the pattern on the skin before shading (stripes on watermelon, dots on strawberries, etc). `rng` is a seeded random generator so every run looks the same."""
     if ft.name == "watermelon":
         for k in range(-5, 6):
             pts = []
@@ -373,6 +392,7 @@ def _face(ft, d):
 
 
 def _down(s):
+    """Shrink a picture that was drawn at SS times its size, smoothing the edges."""
     w, h = s.get_size()
     return pygame.transform.smoothscale(s, (max(1, w // SS), max(1, h // SS)))
 
@@ -388,6 +408,7 @@ def load_sprite(name, ext="png"):
 
 
 def _disc(img, d):
+    """Cut a picture into a circle of diameter d."""
     out = pygame.Surface((d, d), pygame.SRCALPHA)
     out.blit(pygame.transform.smoothscale(img, (d, d)), (0, 0))
     mask = pygame.Surface((d, d), pygame.SRCALPHA)
@@ -406,6 +427,7 @@ class FruitArt:
         self.ft = ft
         if self._load_sprites(ft):
             return
+        # Procedural path (no sprite files): paint skin, add details, shade it into a ball, then trim to the fruit's outline.
         rng = random.Random(ft.name)
         r = ft.r * SS
         size = int(ft.r * 2.9) * SS
@@ -455,6 +477,7 @@ class FruitArt:
         self.half_shadow = make_shadow(self.half)
 
     def _load_sprites(self, ft):
+        """Try to use the photo sprites for this fruit. Returns False if a picture is missing, so __init__ falls back to drawing the fruit with code."""
         whole = load_sprite(ft.name)
         if ft.special:  # specials reuse the banana half, tinted with their juice colour
             half = load_sprite("banana_half")
@@ -479,6 +502,7 @@ class FruitArt:
 
 
 def make_shadow(img, alpha=90):
+    """Make a soft dark blurred copy of a sprite's silhouette, drawn behind it as a shadow. Blur is done by shrinking and enlarging."""
     sil = img.copy()
     sil.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MIN)  # rgb -> 0, keep alpha
     w, h = sil.get_size()
@@ -504,6 +528,7 @@ def load_bomb():
 
 
 def make_bomb(r=38):
+    """Draw the bomb with shapes: dark ball, red warning mark, metal cap and fuse. Returns (picture, fuse tip position, shadow)."""
     R = r * SS
     size = int(r * 3.0) * SS
     c = size / 2
@@ -534,6 +559,7 @@ def make_bomb(r=38):
 
 
 def _vignette(bg):
+    """Darken the corners of the background so attention stays in the middle."""
     vig = pygame.Surface((W, H))
     vig.fill((95, 95, 95))
     for i in range(30):
@@ -556,6 +582,7 @@ def load_background():
 
 
 def make_background(seed=7):
+    """Paint a wooden dojo wall: planks with wavy grain and knots, a warm lantern glow from above, and a vignette."""
     rng = random.Random(seed)
     bg = pygame.Surface((W, H))
     x = 0
@@ -671,6 +698,7 @@ def make_blot(size, rng=None):
 
 
 def make_soft(radius, color, alpha=True):
+    """A soft round blob that fades toward its edge."""
     d = radius * 2 + 2
     if alpha:
         s = pygame.Surface((d, d), pygame.SRCALPHA)
@@ -713,6 +741,7 @@ def tinted(img, k, color):
 
 
 def make_shuriken(size=SHURIKEN_SIZE):
+    """Draw a four-pointed steel throwing star."""
     s = pygame.Surface((size * SS, size * SS), pygame.SRCALPHA)
     c, R = size * SS / 2, size * SS / 2 - SS * 2
     pts = []
@@ -727,7 +756,9 @@ def make_shuriken(size=SHURIKEN_SIZE):
 
 
 class Art:
+    """Builds and holds every picture and font the game needs. Created once at startup and shared by all screens."""
     def __init__(self):
+        """Load or draw every image: fruits, bomb, background, bosses, shuriken, screen-edge glows and the juice-splash photos."""
         self.fonts = Fonts()
         self.fruits = {k: FruitArt(ft) for k, ft in FRUITS.items()}
         self.bomb, self.bomb_tip, self.bomb_shadow = load_bomb() or make_bomb()
@@ -778,17 +809,20 @@ class Art:
         return img
 
     def seal(self, glyph, size=120):
+        """The red stamp-seal picture for a character, made once then reused."""
         key = (glyph, size)
         if key not in self._seals:
             self._seals[key] = make_seal(self.fonts, glyph, size)
         return self._seals[key]
 
     def blot(self, size):
+        """The ink-bleed picture that sits behind a seal, made once then reused."""
         if size not in self._blots:
             self._blots[size] = make_blot(size)
         return self._blots[size]
 
     def soft(self, radius, color, alpha=True):
+        """A cached soft round blob (used for smoke and glows). Sizes snap to steps of 3 to keep the cache small."""
         radius = max(2, int(radius) // 3 * 3)
         key = (radius, color, alpha)
         if key not in self._soft:

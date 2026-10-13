@@ -1,6 +1,10 @@
 // Boss fruit: how it looks and the hooks Play calls (ninja/boss.py). The rules (hp, phases, when one appears) are in
 // rules/boss.js. The boss is never in World.bodies, so Shadow Clones and Dragon Fire never target it, and Time Stop
 // leaves it alone: the world (boss included) is frozen and slicing is blocked while time is held.
+// In Ninja Path a big boss fruit appears now and then; hit it several times to crack and defeat it.
+// This file draws it (generated cracks, a split into halves, a light-streak death) and holds the
+// "hooks": small functions Play calls every frame (tickBoss, sliceBoss) so Play itself stays short.
+// Canvas terms: L is the normal drawing layer, add is a layer drawn with "lighter" (additive light).
 import { REGULAR, WEIGHTS } from "./config.js";
 import { uniform, weighted, shade, rgb, seeded, TAU } from "./util.js";
 import { makeCanvas, getCtx, makeShadow, blurCanvas, polygon, line, drawSprite, addGlow } from "./gfx.js";
@@ -14,6 +18,7 @@ import { feverCut } from "./fever.js";
 class DrawnBoss extends Boss {
   constructor(art, name, x = null) {
     super(art, name, x);
+    // Sprites are made lazily (on first use) and cached, so cracks opening mid-fight don't cause a lag spike.
     this.imgs = null; // stage -> [sprite with cracks, emissive crack glow or null]
   }
 
@@ -30,13 +35,16 @@ class DrawnBoss extends Boss {
       const px = g.getImageData(0, 0, w, h).data;
       const top = Math.trunc(h * CROWN[this.name]); // rind only: the stem and leaves take no cracks
       this.inside = (x, y) => x >= 0 && y >= top && x < w && y < h && px[(y * w + x) * 4 + 3] > 200;
+      // A seeded random generator gives the same "random" cracks every game.
       const rng = seeded(this.name); // the same cracks every time
       this.cracks = Array.from({ length: 6 }, (_, i) => this.makeCrack(rng, base, 0.55 + 0.25 * i));
+      // Stage 0 = whole, stage 1 = 3 cracks, stage 2 = 6 cracks.
       this.imgs = { 0: [base, null], 1: this.cracked(base, this.cracks.slice(0, 3)), 2: this.cracked(base, this.cracks.slice(0, 6)) };
     }
     return this.imgs[this.stage];
   }
 
+  // Returns a copy of the sprite painted one flat colour: "source-in" keeps the colour only where the sprite is opaque.
   silhouette(base, color, onBlack = false) {
     const c = makeCanvas(base.width, base.height), g = getCtx(c);
     if (onBlack) { g.fillStyle = "#000"; g.fillRect(0, 0, c.width, c.height); }
@@ -62,6 +70,7 @@ class DrawnBoss extends Boss {
       }
       if (this.inside(Math.trunc(px), Math.trunc(py))) break;
     }
+    // Walk inward from the rind, turning a little each step (heading is the direction in radians), to draw a jagged crack.
     let heading = Math.atan2(cy - py, cx - px) + rng.uniform(-0.5, 0.5);
     const main = [[px, py]];
     let length = this.r * reach * rng.uniform(0.8, 1.15);
@@ -109,6 +118,7 @@ class DrawnBoss extends Boss {
         }
       });
     }
+    // "destination-in" keeps only pixels that overlap the rind, so no crack spills outside the fruit.
     dg.globalCompositeOperation = "destination-in"; // never past the rind
     dg.drawImage(base, 0, 0);
     const img = makeCanvas(w, h), ig = getCtx(img);
@@ -153,11 +163,13 @@ class DrawnBoss extends Boss {
     }
   }
 
+  // Draws the boss each frame: shadow, sprite with cracks, glowing cracks (additive), and a white flash when hit.
   draw(L, add) {
     if (!this.art) return;
     if (this.phase === "dead") { this.drawDeath(L, add); return; }
     const [img, lit] = this.images();
     const a = this.hitAge;
+    // Hit reaction: a damped wobble (exp() shrinks it over time, cos/sin makes it swing) along the slash direction.
     const rec = 12 * Math.exp(-a * 14) * Math.cos(a * 42); // knocked along the slash, ringing back
     const ang = this.ang + 5 * Math.exp(-a * 10) * Math.sin(a * 36) * (this.hitDir[0] >= 0 ? 1 : -1);
     const x = this.x + this.hitDir[0] * rec, y = this.y + this.hitDir[1] * rec;
@@ -168,6 +180,7 @@ class DrawnBoss extends Boss {
     if (this.flash > 0.02) drawSprite(add, this.white, x, y, ang, s, (70 * this.flash ** 2) / 255); // the hit lands as light on the rind
   }
 
+  // Death animation: the two halves fade out while a blade of light streaks across the cut.
   drawDeath(L, add) {
     const fade = Math.max(0, Math.min(1, (DEATH - this.deadT) / 0.4));
     for (const h of this.halves) drawSprite(L, h.img, h.x, h.y, h.ang, 1, fade);
@@ -185,8 +198,10 @@ class DrawnBoss extends Boss {
   }
 }
 
+// The director decides when a boss appears (the two 45-second numbers are timing gaps; see rules/boss.js).
 export const makeBossDirector = () => new BossDirector(45.0, 45.0, (art, name) => new DrawnBoss(art, name));
 
+// These are called by Play. "play" is the running game scene.
 // ---------------- Play hooks ----------------
 
 /** Once a frame (outside hit-stop), `dt` in world time: Time Stop holds the boss and its timers. */
@@ -219,6 +234,7 @@ export function sliceBoss(play) {
   }
 }
 
+// The point on the segment seg (ax, ay, bx, by) nearest to (x, y): projects the point onto the line, clamped to its ends.
 function closest(seg, x, y) {
   const [ax, ay, bx, by] = seg;
   const dx = bx - ax, dy = by - ay;
@@ -227,6 +243,8 @@ function closest(seg, x, y) {
   return [ax + dx * t, ay + dy * t];
 }
 
+// One hit on the boss: score, hit-stop (a brief freeze for punch), screen shake, sparks and juice.
+// "lod" (level of detail) lowers the particle count when many cuts happen close together.
 function strike(play, b, seg) {
   const w = play.w;
   feverCut(play); // each hit grows the chain, like a cut
@@ -250,6 +268,7 @@ function strike(play, b, seg) {
   play.app.audio.play("boss_hit");
 }
 
+// The boss dies: big shake, flash, juice along the cut line, bonus score and a stamp scheduled for later.
 function defeat(play, b) {
   const w = play.w;
   const [x, y, dx, dy] = b.cut;
@@ -280,6 +299,7 @@ function seal(play, b) {
 function burst(play, b) {
   b.burst = false;
   const [x, y] = b.cut;
+  // Fan 12 fruit upward across about 300 degrees (1.7 x PI) around the boss's centre.
   for (let i = 0; i < 12; i++) {
     const a = -Math.PI / 2 + ((i - 5.5) / 12) * Math.PI * 1.7 + uniform(-0.1, 0.1);
     const sp = uniform(560, 900);

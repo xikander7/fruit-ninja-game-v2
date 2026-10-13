@@ -12,8 +12,13 @@ import pygame
 
 from .settings import W, H
 
+# Bloom (the soft glow around bright things) is made by shrinking the picture again and again, blurring a little each time,
+# then growing it back and adding the levels together. The shaders below are tiny programs that run on the graphics card (GPU),
+# written in GLSL, once for every pixel.
 LEVELS = 5  # bloom mip chain: 640x360 down to 40x22
 
+# Vertex shader: positions the one big triangle that covers the whole screen and tells the pixel shaders where on the picture (uv, 0-1) each pixel is.
+# Every pass below reuses it, because we only ever draw full-screen images.
 VERT = """
 #version 330
 in vec2 in_pos;
@@ -39,6 +44,7 @@ vec3 down(sampler2D t, vec2 uv, vec2 texel) {
 }
 """
 
+# Pass 1 ("pre"): pick out what should glow (emissive layer plus the brightest parts of the scene) while shrinking to half size.
 PREFILTER = """
 #version 330
 uniform sampler2D u_base;
@@ -57,6 +63,7 @@ vec3 tap(sampler2D t, vec2 uv) { return src(uv); }
 void main() { f_color = vec4(down(u_base, v_uv, u_texel), 1.0); }
 """
 
+# Passes 2-5 ("down"): shrink the glow image by half again, softening it each time.
 DOWN = """
 #version 330
 uniform sampler2D u_src;
@@ -90,6 +97,8 @@ void main() {
 }
 """
 
+# Final pass ("comp"): add the bloom to the scene, then apply the camera zoom, shockwave ripples, colour fringing,
+# saturation, film-like brightness curve, dark corners (vignette) and film grain. The HUD (`ui`) is laid on last, untouched.
 COMPOSITE = """
 #version 330
 uniform sampler2D u_base;
@@ -158,6 +167,7 @@ void main() {
 
 
 def letterbox(x, y, w, h):
+    """Fit the 16:9 game picture inside any window shape, leaving black bars at the sides or top/bottom. Returns x, y, width, height."""
     """Largest 16:9 rect centred in (x, y, w, h)."""
     s = min(w / W, h / H)
     vw, vh = max(1, round(W * s)), max(1, round(H * s))
@@ -171,7 +181,9 @@ def to_logical(pos, window_size):
 
 
 class PostFX:
+    """Owns the OpenGL objects (textures, shaders) and runs the bloom + final-look passes each frame."""
     def __init__(self, ctx=None):
+        """Create (or reuse) an OpenGL context, then allocate the textures for the game's layers and each bloom level, and compile the shaders."""
         self.owns_ctx = ctx is None  # a context we made is ours to release (each F11 toggle makes a new one)
         self.ctx = ctx or moderngl.create_context()
         ctx = self.ctx
@@ -194,18 +206,21 @@ class PostFX:
         self.time = 0.0
 
     def texture(self, size, comps, dtype):
+        """Make a GPU texture with smooth (linear) filtering. `comps` = colour channels (3 = RGB, 4 = RGBA)."""
         t = self.ctx.texture(size, comps, dtype=dtype)
         t.filter = (moderngl.LINEAR, moderngl.LINEAR)
         t.repeat_x = t.repeat_y = False
         return t
 
     def set(self, prog, **uniforms):
+        """Send values ("uniforms") to a shader program, such as zoom or saturation."""
         p = self.progs[prog]
         for k, v in uniforms.items():
             if k in p:  # the GLSL compiler drops unused uniforms
                 p[k].value = v
 
     def blit(self, prog, out, *textures):
+        """Run shader `prog` over the whole screen, reading the given textures and writing into framebuffer `out`."""
         self.fbos[out].use()
         for unit, t in enumerate(textures):
             t.use(unit)
@@ -227,6 +242,7 @@ class PostFX:
         elif not self.ui_blank:
             self.ui.write(bytes(W * H * 4))
             self.ui_blank = True
+        # The grain pattern moves a little every frame, so it shimmers like film.
         self.time += 1 / 60
 
         # bloom: prefilter into the first half-res level, then down the chain ...
@@ -263,6 +279,7 @@ class PostFX:
         self.vaos["comp"].render(moderngl.TRIANGLES, vertices=3)
 
     def release(self):
+        """Free the GPU objects (called when the window mode changes or the game exits)."""
         for obj in [*self.vaos.values(), *self.progs.values(), *self.fbos.values(),
                     self.base, self.emissive, self.ui, *self.downs, *self.ups, self.vbo]:
             obj.release()

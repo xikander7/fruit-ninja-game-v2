@@ -1,4 +1,8 @@
 // Heads-up display: the Play HUD, the grades over the world, the on-screen buttons (ninja/hud.py).
+// The HUD (heads-up display) is everything drawn on top of the game: score, strikes or timer,
+// power-up timers, the Ki bar, the boss health bar and the pause/mute buttons.
+// "ui" is the canvas context for the top layer. Most coordinates are on the 1280x720 stage.
+// Functions here only draw from Play's current state; they never change the game rules.
 import { W, H, VIEW, WASHI, GOLD, HANKO, MUTED, FRUITS } from "./config.js";
 import { rgb, rgba, lerpRgb, TAU } from "./util.js";
 import { label, thinBar, blit, rectAt } from "./ui.js";
@@ -10,9 +14,13 @@ import { FREEZE_TIME, FLIP_TIME, ICE, VIOLET } from "./rules/hazards.js";
 import { KI_MAX } from "./rules/ki.js";
 import { drawHazardGrades } from "./hazards.js";
 
+// Width (px) of the Ki bar. Ki is a meter that fills with cuts and unlocks the three superpowers.
 export const KI_W = 180;
+// Width (px) of the boss health bar.
 const BOSS_W = 360;
 
+// Draws the whole in-game HUD once per frame. The layout flows downward on the right: strikes or timer first,
+// then one chip per active power-up, so "y" tracks where the next item goes.
 export function drawPlayHud(play, ui) {
   const f = play.app.art.fonts;
   // score: left, gold, the number rolls toward the real value
@@ -53,6 +61,7 @@ export function drawPlayHud(play, ui) {
     y = r.bottom + 18;
   }
   // power-up chips: what's active and how long it has left
+  // Each chip is [time left, total time, label, colour]; the bar under the label shows left / total.
   const chips = [[play.freeze, 6.0, "FREEZE", FRUITS.freeze.juice], [play.frenzy, 4.5, "FRENZY", FRUITS.frenzy.juice],
     [play.double, 8.0, "DOUBLE ×2", FRUITS.double.juice], [play.bladeFrozen, FREEZE_TIME, "BLADE FROZEN", ICE],
     [play.hz.flipT, FLIP_TIME, "GRAVITY FLIPPED", VIOLET]];
@@ -106,6 +115,7 @@ export function drawKiGlow(play, ctx) {
   ctx.fillRect(x, y, KI_W, 3);
 }
 
+// Power names with the kanji shown on their seal button, in Q, W, E key order.
 export const POWER_ORDER = [["timestop", "止"], ["clones", "影"], ["dragonfire", "炎"]];
 /** The three power seals beside a full Ki bar: tap one to use it. */
 export function powerButtons() {
@@ -121,6 +131,7 @@ export function iconButtons(play) {
   return list;
 }
 
+// Draws the round pause and mute buttons with simple vector shapes (no image files needed).
 export function drawIcons(ui, buttons, muted, paused = false) {
   ui.save();
   ui.lineCap = "round"; ui.lineJoin = "round";
@@ -145,6 +156,7 @@ export function drawIcons(ui, buttons, muted, paused = false) {
   ui.restore();
 }
 
+// Returns the button under the pointer (x, y) if it is within 28 px of its centre, else undefined.
 export function hitIcon(buttons, x, y) {
   return buttons.find((b) => Math.hypot(x - b.cx, y - b.cy) <= 28);
 }
@@ -169,6 +181,7 @@ function drawMult(play, ui, sr) {
   thinBar(ui, x + 2, r.bottom + 4, Math.max(sr2.w, r.w), fv.left(), GOLD);
 }
 
+// The FEVER seal image is built once and reused; it is rebuilt only if the render scale changes.
 let SEAL = null, SEAL_RS = 0;
 /** FEVER in washi on a hanko-red seal: square-cornered, a touch uneven, like ink pressed onto paper. */
 function feverSeal(f) {
@@ -214,6 +227,7 @@ function drawBossBar(play, ui) {
   if (!b) return;
   const f = play.app.art.fonts;
   drawBossTally(b, f, ui);
+  // Fade the boss bar in while the boss rises, out while it escapes or dies; a is opacity 0-1.
   const a = b.phase === "rise" ? Math.min(1, b.t / 0.4) : b.phase === "escape" ? Math.max(0, 1 - b.t / 0.5)
     : b.phase === "dead" ? Math.max(0, 1 - b.deadT / 0.6) : 1.0;
   if (a <= 0) return;
@@ -221,6 +235,7 @@ function drawBossBar(play, ui) {
   label(ui, f, f.boss, b.title, WASHI, [W / 2, y - 16], "center", 2, true, a);
   ui.save();
   ui.globalAlpha = a;
+  // Three bars stacked: faint track, pale "recent damage" trail (b.shown), then the red real HP (b.hp).
   ui.fillStyle = rgba(WASHI, 40 / 255); ui.fillRect(x, y, BOSS_W, 4);
   ui.fillStyle = rgba(WASHI, 150 / 255); ui.fillRect(x, y, Math.trunc((BOSS_W * b.shown) / BOSS_HP), 4);
   ui.fillStyle = rgb(HANKO); ui.fillRect(x, y, Math.trunc((BOSS_W * b.hp) / BOSS_HP), 4);
@@ -236,6 +251,7 @@ function drawBossTally(b, f, ui) {
   if (a <= 0) return;
   const s = `+${b.tally}`;
   const img = f.text(f.bonus, s, GOLD), sh = f.shadow(f.bonus, s);
+  // Quick swell right after each hit: pop falls from 1 to 0 in 0.15 s.
   const pop = Math.max(0, 1 - b.tallyT / 0.15);
   const k = pop > 0 ? 1 + 0.3 * pop * pop : 1; // each hit lands with a small swell
   const x = Math.min(Math.max(b.x + b.r * 0.85, 60), W - 60);

@@ -1,3 +1,6 @@
+// world.js - the "world" is everything that lives on the dojo wall: thrown fruit, cut halves, juice, particles,
+// stamps, screen shake and slow-motion. Both the menu and the real game use one World each.
+// It does not decide the rules of play (that is play.js); it just simulates and draws the things.
 // The world: everything that lives on the dojo wall (World in ninja/game.py).
 import { W, H, GRAVITY, VIEW, WASHI, HANKO } from "./config.js";
 import { uniform, shade, rgb, deg } from "./util.js";
@@ -5,18 +8,23 @@ import { Particles, Stains, Popups, Stamp, Shake } from "./fx.js";
 import { Body, Half } from "./entities.js";
 import { glowImg, rayBurst, drawSprite, circle } from "./gfx.js";
 
+// One World per scene. Bodies are whole fruit/bombs; halves are the two pieces after a cut.
 export class World {
   /** `bg`: a view-sized canvas to use as the wall (the blurred snapshot behind the results), else the dojo wall. */
   constructor(app, bg = null) {
+    // Tuning numbers (seconds unless noted). "LOD" = level of detail: when many cuts happen at once we draw less
+    // juice per cut so the game stays smooth.
     this.HEAT_TAU = 0.5; this.HEAT_LOD = 6.0; this.MAX_HALVES = 28; // cut-effect LOD: a storm of cuts gets lighter juice per cut
     this.PUNCH = 0.25; // s for a combo zoom punch to ease back
     this.SLOW_HOLD = 0.4; this.SLOW_EASE = 0.15; // slow-mo: held at full strength, then eased back to real time
     this.SHOCK = 0.6; // s for a bomb shockwave to cross the screen
     this.app = app;
     this.art = app.art;
+    // Normally the wall image; the results screen passes a blurred snapshot instead.
     this.bg = bg; // null: the wall
     this.bgDraw = null; // {scale, dx, dy}: how the menu drifts and parallaxes the wall
     this.bodies = []; this.halves = [];
+    // Phones get half as many particles as computers to keep the frame rate up.
     this.particles = new Particles(app.art, app.touch ? 700 : 1400);
     this.stains = new Stains();
     this.popups = new Popups(app.art.fonts);
@@ -25,41 +33,51 @@ export class World {
     this.slashes = []; this.rings = [];
     this.flash = 0;
     this.hitstop = 0;
+    // A quick zoom "punch" on big combos: [how far to zoom, how long ago it started].
     this.punch = [1.0, this.PUNCH]; // (peak zoom, age)
     this.slowmo = 0; // real seconds of slow-mo left
     this.shocks = []; // [x, y, age]
     this.t = 0;
+    // Gravity direction: 1 is normal, -1 when a chaos fruit flips everything upside down.
     this.gflip = 1.0; // gravity sign: -1 while a chaos fruit has turned the dojo upside down
     this.powerScale = 1.0; // 0 while Time Stop holds the world still
+    // "Heat" is a running count of recent cuts. It fades away with time and drives the LOD above.
     this.cutHeat = 0; // ~ cuts in the last HEAT_TAU s (decays exponentially on real time)
     this.moteT = 0;
     this.emberT = uniform(1.0, 3.0);
+    // Pre-fill the room with dust motes so it does not start empty.
     for (let i = 0; i < 40; i++) this.particles.mote(this.viewBox()); // the dojo already has dust hanging in the lamplight
   }
 
+  // The visible area in stage coordinates. It is bigger than the base stage on wide or tall screens.
   viewBox() {
     return { x: -VIEW.ox, y: -VIEW.oy, w: VIEW.w, h: VIEW.h };
   }
 
+  // Add a fruit/bomb at (x, y) with velocity (vx, vy) in pixels per second. isStatic means it just hangs there (menus).
   throw(kind, x, y, vx, vy, isStatic = false) {
     const b = new Body(this.art, kind, x, y, vx, vy, isStatic);
     this.bodies.push(b);
     return b;
   }
 
+  // Slice body `b` along the blade line (ax,ay)->(bx,by): make two halves that fly apart, splash juice, leave a stain.
   cut(b, ax, ay, bx, by) {
     b.alive = false;
     let dx = bx - ax, dy = by - ay;
     const L = Math.hypot(dx, dy) || 1;
     dx /= L; dy /= L;
+    // (nx, ny) is the direction at right angles to the blade; the two halves are pushed along it, one each way.
     const nx = -dy, ny = dx;
     const fa = this.art.fruits[b.kind];
     for (const side of [1, -1]) {
       const sx = nx * side, sy = ny * side;
+      // Each half keeps 60% of the fruit's speed, is pushed sideways, and gets a small upward hop (-120).
       const vx = (b.static ? 0 : b.vx * 0.6) + sx * 170 + dx * 60;
       const vy = (b.static ? 0 : b.vy * 0.6) + sy * 170 - 120;
       this.halves.push(new Half(fa, b.x + sx * b.r * 0.3, b.y + sy * b.r * 0.3, vx, vy, deg(Math.atan2(-sy, sx)), b));
     }
+    // Keep at most MAX_HALVES pieces alive; the oldest are already falling off-screen.
     if (this.halves.length > this.MAX_HALVES) this.halves.splice(0, this.halves.length - this.MAX_HALVES); // the oldest are falling away anyway
     this.cutHeat += 1; // 1 at normal cut rates; powers and fruit rain can cut dozens a second
     const lod = Math.min(1.0, this.HEAT_LOD / this.cutHeat);
@@ -70,6 +88,7 @@ export class World {
     this.app.audio.play("splat", 0.8);
   }
 
+  // A bomb goes off: flash, screen shake, sparks, smoke and a shockwave. hitstop freezes the game for a split second.
   explode(b) {
     b.alive = false;
     this.rings.push([b.x, b.y, 0.0]);
@@ -85,10 +104,12 @@ export class World {
     this.app.audio.play("explode");
   }
 
+  // Quick camera zoom that eases back by itself. slow() starts a short slow-motion moment.
   zoomPunch(zoom) { this.punch = [zoom, 0.0]; }
   slow() { this.slowmo = this.SLOW_HOLD + this.SLOW_EASE; }
 
   /** 1 while slow-mo is at full strength, easing to 0 as it ends. */
+  // 1 while slow-mo is at full strength, easing to 0 as it ends. The smoothstep formula (u*u*(3-2u)) makes it ease softly.
   slowK() {
     if (this.slowmo <= 0) return 0.0;
     if (this.slowmo >= this.SLOW_EASE) return 1.0;
@@ -96,18 +117,22 @@ export class World {
     return u * u * (3 - 2 * u);
   }
 
+  // How fast game time runs: 1 normally, 0.3 in full slow-mo, 0 when Time Stop is active.
   timeScale() { return (1.0 - 0.7 * this.slowK()) * this.powerScale; } // 0.3 at full slow-mo
 
+  // A red "hanko" seal stamped on the wall (a caption like a combo name).
   stamp(glyph, caption, x, y, size = 120, color = WASHI, bonus = null, hold = false) {
     this.stamps.push(new Stamp(this.art, glyph, caption, x, y, size, color, bonus, hold));
   }
 
+  // dt is game time (can be slowed or frozen); realDt is real clock time. Visual effects use realDt so they still play during slow-mo.
   update(dt, realDt) {
     // camera/post effects run on real time so they play out even through hit-stop and slow-mo
     this.t += realDt;
     this.shake.update(realDt);
     this.flash = Math.max(0, this.flash - realDt * 6.0); // a sharp pop; a slow fade reads as fog
     this.slowmo = Math.max(0, this.slowmo - realDt);
+    // Exponential decay: the heat halves roughly every HEAT_TAU seconds.
     this.cutHeat *= Math.exp(-realDt / this.HEAT_TAU);
     this.punch[1] += realDt;
     for (const s of this.shocks) s[2] += realDt;
@@ -122,15 +147,18 @@ export class World {
     }
     this.stamps = this.stamps.filter((s) => s.update(realDt));
     this.popups.update(realDt);
+    // During a hit-stop nothing moves, which makes impacts feel heavy.
     if (this.hitstop > 0) {
       this.hitstop -= realDt;
       return;
     }
+    // Pull all bodies and halves down (or up when gravity is flipped).
     const g = GRAVITY * this.gflip;
     for (const b of this.bodies) b.update(dt, g);
     for (const h of this.halves) h.update(dt, g);
     this.halves = this.halves.filter((h) => !h.gone());
     this.particles.update(dt);
+    // Particle streaks get shorter in slow-mo.
     this.particles.blur = this.timeScale(); // slow-mo shortens streaks; freeze doesn't
     this.stains.update(dt);
     for (const s of this.slashes) s[5] += dt;
@@ -149,6 +177,7 @@ export class World {
     }
   }
 
+  // Draws the wall. In the menu it is scaled and shifted for the parallax effect.
   drawBackground(L) {
     const v = this.app.art.view(VIEW.w, VIEW.h);
     const img = this.bg || v.bg;
@@ -163,6 +192,7 @@ export class World {
   }
 
   /** Draw the world into the app's world layer (L) and emissive layer (add); `extra(L, add)` draws a scene's own things. */
+  // L is the main (normal-colour) layer; `add` is the glowing layer drawn with additive blending so bright things bloom.
   draw(extra = null) {
     const L = this.app.L, add = this.app.add;
     this.drawBackground(L);
@@ -172,6 +202,7 @@ export class World {
     for (const h of this.halves) h.draw(L);
     for (const b of this.bodies) {
       if (!b.alive) continue;
+      // Special fruit (power-ups) get a pulsing glow and slowly turning light rays.
       if (b.special) { // aura + slowly turning light rays, all emissive so the bloom picks them up
         const col = b.ft.juice;
         const pulse = 0.8 + 0.2 * Math.sin(this.t * 6);
@@ -183,6 +214,7 @@ export class World {
     }
     if (extra) extra(L, add);
     this.particles.draw(L, add);
+    // The quick white streak that flashes along each cut, fading over 0.16 seconds.
     for (const [x, y, dx, dy, r, age] of this.slashes) {
       const k = 1 - age / 0.16;
       add.strokeStyle = `rgb(${Math.trunc(200 * k)},${Math.trunc(200 * k)},${Math.trunc(190 * k)})`;
@@ -206,6 +238,7 @@ export class World {
   }
 
   /** Post effects for this frame; every value decays back to neutral on its own. */
+  // Screen-wide effects: zoom, colour saturation, white flash and shake offset, read by the app when compositing.
   fxParams() {
     const k = this.slowK();
     const [z, age] = this.punch;

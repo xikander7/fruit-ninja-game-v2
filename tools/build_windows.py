@@ -28,14 +28,18 @@ def make_icon(path):
     src = pygame.image.load(str(ROOT / "assets" / "sprites" / "watermelon.png")).convert_alpha()
     w, h = src.get_size()
     side = max(w, h)
+    # Pad the sprite onto a square canvas so resizing it doesn't squash it.
     square = pygame.Surface((side, side), pygame.SRCALPHA)
     square.blit(src, ((side - w) // 2, (side - h) // 2))
+    # An .ico file can hold several sizes so Windows can pick a sharp one for each place the icon shows up.
     entries = []
     for size in (256, 64, 48, 32, 16):
         tmp = WORK / f"icon{size}.png"
         pygame.image.save(pygame.transform.smoothscale(square, (size, size)), str(tmp))
         entries.append((size, tmp.read_bytes()))
     pygame.quit()
+    # The .ico layout is: a 6-byte header, one 16-byte directory entry per image, then the PNG image data.
+    # A width/height of 256 is stored as 0 in the file, which is why the entries use size % 256.
     out = io.BytesIO()
     out.write(struct.pack("<HHH", 0, 1, len(entries)))
     offset = 6 + 16 * len(entries)
@@ -48,20 +52,26 @@ def make_icon(path):
 
 
 def main():
+    """Make the icon, run PyInstaller to build the .exe folder, then zip it for sharing."""
     WORK.mkdir(parents=True, exist_ok=True)
     icon = WORK / "watermelon.ico"
     make_icon(icon)
+    # PyInstaller packs main.py, Python itself and our libraries into one folder. --noconsole hides the black
+    # terminal window, --clean clears PyInstaller's cache and --noconfirm overwrites old output without asking.
     cmd = [sys.executable, "-m", "PyInstaller", str(ROOT / "main.py"), "--noconfirm", "--clean", "--noconsole",
            "--name", NAME, "--icon", str(icon)]
+    # --add-data copies a folder into the bundle as 'source;destination' (';' is the separator on Windows).
     for sub in ("sprites", "audio", "fonts", "glyphs"):  # not assets/raw: the source art is git-ignored and never ships
         cmd += ["--add-data", f"{ROOT / 'assets' / sub};assets/{sub}"]
     # moderngl picks its GL loader at runtime, so PyInstaller can't see the import
     cmd += ["--hidden-import", "glcontext", "--hidden-import", "glcontext.wgl",
             "--exclude-module", "numpy",  # a dev tool only; pygame's optional array hooks would drag in ~27 MB
             "--distpath", str(DIST), "--workpath", str(WORK), "--specpath", str(WORK)]
+    # Run PyInstaller from the repo root; check=True stops this script if the build fails.
     subprocess.run(cmd, check=True, cwd=ROOT)
     folder = DIST / NAME
     zpath = DIST / f"{NAME}-windows.zip"
+    # Zip the folder so there is one file to share. Files are stored under a NAME/ folder, so unzipping makes a tidy directory.
     zpath.unlink(missing_ok=True)
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for f in sorted(folder.rglob("*")):

@@ -1,30 +1,40 @@
 // Loading and building the art: photoreal sprites, fonts, kanji stencils, hanko seals, juice splashes, the
 // dojo wall (ninja/art.py). Everything is built once at start-up or on first use and cached.
+// Most visuals are built here once and then reused ("cached") because creating canvases is slow.
+// Some art comes from files (fruit photos, fonts, kanji stencil images); the rest is drawn in code
+// (seals, ink blots, brush strokes, the vignette). The Art class at the bottom is the one object
+// the game passes around as `art`. A "canvas" is a pixel image you can draw on.
 import { FRUITS, W, H, HANKO, GOLD } from "./config.js";
 import { gfx, makeCanvas, getCtx, makeShadow, tinted, blurCanvas, polygon, circle } from "./gfx.js";
 import { seeded, rgb, TAU, clamp } from "./util.js";
 import { netPool, retry } from "./net.js";
 
+// Unicode code points (in hex) of the kanji stencil images in glyphs/. The seal stamps cut these out of red ink.
 export const GLYPH_HEX = ["500d", "518d", "51cd", "5d50", "5f71", "5fcd", "623b", "6587", "65ac", "6642", "6975", "6b62", "708e", "71b1",
   "767d", "7985", "7d42", "8a0e", "9006", "901f", "9023", "9053", "9b3c"];
 const GLYPH_SIZE = 120; // the stencils are rendered at 120 px
+// Photo splash overlays: file name, and the direction (degrees) the liquid is flung; null = a radial "crown".
 const SPLASHES = [["burst1", null], ["burst2", 0], ["drops1", 90], ["drops2", 8]]; // file, direction the liquid is flung (deg)
 const SPLASH_SCALE = 0.62;
+// Every sprite image to load: each fruit by name plus the bomb, ice bomb, shuriken and the two bosses.
 const SPRITE_NAMES = [...Object.keys(FRUITS), "bomb", "icebomb", "shuriken", "durian", "pineapple"];
 
 // ---------------- fonts and text ----------------
 
+// family -> [file, weight, fallback fonts used if the file fails to load].
 const FONT_FILES = {
   CormorantSC: ["CormorantSC-Bold.ttf", "700", "Georgia, 'Times New Roman', serif"],
   BarlowCondensed: ["BarlowCondensed-SemiBold.ttf", "600", "'Arial Narrow', 'Segoe UI', sans-serif"],
   PlexMono: ["IBMPlexMono-Regular.ttf", "400", "Consolas, 'Courier New', monospace"],
 };
 
+// Describes one font at one size: family + size gives a unique id used as a cache key.
 function fontSpec(family, size) {
   const [, weight, fallback] = FONT_FILES[family];
   return { id: `${family}${size}`, family, size, weight, fallback };
 }
 
+// All named fonts the game uses (title, score, timer...), plus cached text images so text is not re-rendered every frame.
 export class Fonts {
   constructor() {
     const D = "CormorantSC", N = "BarlowCondensed", M = "PlexMono";
@@ -38,6 +48,7 @@ export class Fonts {
     this._metrics = new Map();
   }
 
+  // Builds a CSS font string (like "700 72px Barlow"); S is the render scale for sharp text on big screens.
   css(font, S = gfx.RS) {
     return `${font.weight} ${font.size * S}px "${font.family}", ${font.fallback}`;
   }
@@ -49,6 +60,7 @@ export class Fonts {
       const g = getCtx(makeCanvas(4, 4));
       g.font = this.css(font, 1);
       const t = g.measureText("Mg");
+      // ascent = pixels above the text baseline, descent = below it; together they are the line height.
       const asc = t.fontBoundingBoxAscent ?? font.size * 0.95;
       const desc = t.fontBoundingBoxDescent ?? font.size * 0.27;
       m = { asc, h: asc + desc };
@@ -66,6 +78,7 @@ export class Fonts {
       const S = gfx.RS, lm = this.lineMetrics(font);
       const probe = getCtx(makeCanvas(4, 4));
       probe.font = this.css(font);
+      // Tracking (letter spacing) is done by drawing letter by letter, so we measure each character.
       const chars = tracking && s.length > 1 ? [...s] : [s];
       const widths = chars.map((c) => probe.measureText(c).width / S);
       const lw = Math.max(1, widths.reduce((a, b) => a + b, 0) + (chars.length > 1 ? tracking * (chars.length - 1) : 0));
@@ -111,6 +124,7 @@ export function hiCanvas(lw, lh) {
   return [c, g];
 }
 
+// Small shared cache: same key + render scale gives back the same canvas instead of building a new one.
 const UI_CACHE = new Map();
 function cached(key, make) {
   const k = `${key}|${gfx.RS}`;
@@ -144,12 +158,14 @@ export function hairlineRing(r) {
 export function brushX(size, color, outline = false) {
   return cached(`bx${size}${color}${outline}`, () => {
     const d = size, p = d * 0.1;
+    // Each stroke: [start x, y, end x, y, bow (how much it curves), max width]. Two strokes make the X.
     const strokes = [[p, p * 1.3, d - p, d - p * 0.8, 0.05, 0.17], [d - p * 1.2, p, p * 1.1, d - p * 1.1, -0.04, 0.14]];
     const shapes = strokes.map(([x0, y0, x1, y1, bow, wmax]) => {
       const L = Math.hypot(x1 - x0, y1 - y0), ux = (x1 - x0) / L, uy = (y1 - y0) / L, nx = -uy, ny = ux;
       const left = [], right = [];
       for (let i = 0; i <= 20; i++) {
         const t = i / 20;
+        // Width along the stroke: blunt where the brush lands, then tapering to a point as it lifts (t goes 0 -> 1).
         const w = (d * wmax * (0.65 + 0.35 * Math.min(1, t / 0.18)) * Math.max(0.03, 1 - t ** 1.8)) / 2;
         const cx = x0 + ux * L * t + nx * bow * L * Math.sin(Math.PI * t);
         const cy = y0 + uy * L * t + ny * bow * L * Math.sin(Math.PI * t);
@@ -179,6 +195,8 @@ export function brushX(size, color, outline = false) {
 
 // ---------------- hanko seals, ink blots ----------------
 
+// Draws a hanko (a Japanese stamp seal): a red square with a slightly wobbly edge, the kanji cut out,
+// then noise and wear so it looks pressed in ink. A seeded random generator (rng) makes the same glyph look the same each time.
 export function makeSeal(art, glyph, size) {
   const rng = seeded(glyph);
   const s = makeCanvas(size, size), g = getCtx(s);
@@ -256,6 +274,7 @@ export function makeBackground(img, vw, vh) {
   const sx = vw / W, sy = vh / H;
   vg.fillStyle = "rgb(95,95,95)";
   vg.fillRect(0, 0, vw, vh);
+  // Draw 90 nested ellipses, each smaller and brighter than the last, so the centre ends brightest and the steps blend into a smooth fade.
   const N = 90;
   for (let i = 0; i < N; i++) {
     const t = i / (N - 1);
@@ -293,6 +312,7 @@ export function makeEdgeGlow(color, peak, reach, vw, vh) {
 
 // ---------------- the Art object ----------------
 
+// Loads one image file as a promise (waits until it is ready); retries on failure through the shared network pool.
 function loadImage(url) {
   return netPool(() => retry((attempt) => new Promise((resolve, reject) => {
     const img = new Image();
@@ -302,6 +322,7 @@ function loadImage(url) {
   })));
 }
 
+// Loads the custom font files and registers them with the browser. If one fails, the fallback font is used.
 async function loadFonts(base) {
   const faces = Object.entries(FONT_FILES).map(([family, [file, weight]]) => {
     const f = new FontFace(family, `url(${base}fonts/${file})`, { weight });
@@ -323,6 +344,7 @@ function bombTip(img) {
   return [0, -height / 2];
 }
 
+// The loaded art for the whole game. Create it, `await art.load(base)`, then read art.fruits, art.bomb, art.fonts...
 export class Art {
   constructor() {
     this.fonts = new Fonts();
@@ -333,6 +355,7 @@ export class Art {
   async load(base, onProgress = () => {}) {
     const jobs = [];
     let done = 0;
+    // Counts every file to load so the loading bar can show done / total.
     const total = SPRITE_NAMES.length + 1 + SPLASHES.length + GLYPH_HEX.length + 2;
     const track = (p) => p.then((v) => { onProgress(++done, total); return v; });
     const img = (url) => track(loadImage(`${base}${url}`));
@@ -362,6 +385,7 @@ export class Art {
         shadow: makeShadow(whole), halfShadow: makeShadow(half),
       };
     }
+    // bombTip finds where the fuse comes out of the bomb sprite, so the spark can sit there.
     this.bomb = sprites.bomb; this.bombTip = bombTip(sprites.bomb); this.bombShadow = makeShadow(sprites.bomb);
     this.icebomb = sprites.icebomb; this.icebombShadow = makeShadow(sprites.icebomb);
     this.shuriken = sprites.shuriken; this.shurikenShadow = makeShadow(sprites.shuriken);
@@ -399,12 +423,14 @@ export class Art {
     return c;
   }
 
+  // Returns a cached seal image for a kanji glyph at a given pixel size.
   seal(glyph, size = 120) {
     const key = `${glyph}|${size}`;
     if (!this._seals.has(key)) this._seals.set(key, makeSeal(this, glyph, size));
     return this._seals.get(key);
   }
 
+  // Returns a cached ink blot image for the given size.
   blot(size) {
     if (!this._blots.has(size)) this._blots.set(size, makeBlot(size));
     return this._blots.get(size);

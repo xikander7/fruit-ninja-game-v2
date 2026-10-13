@@ -13,25 +13,30 @@ from .entities import seg_hits_circle
 from .fx import Trail, catmull_rom, glow, shade
 from .settings import W, H, GOLD
 
+# Ki is the power meter: it fills a little with every cut and, when full, lets you trigger a power.
 KI_MAX = 100
 KI_PER_CUT = 4
 KI_PER_COMBO = 3  # x combo size, for combos of 3 or more
 
 
 class KiMeter:
+    """The Ki power meter: fills as you cut, empties when you use a power."""
     def __init__(self, value=0.0):
         self.value = value
         self.locked = False  # set while a power runs: powers never feed the meter
 
     @property
     def full(self):
+        """True when there is enough Ki to use a power."""
         return self.value >= KI_MAX
 
     def add(self, n):
+        """Add Ki (capped at KI_MAX), unless a power is running."""
         if not self.locked:
             self.value = min(KI_MAX, self.value + n)
 
     def spend(self):
+        """Empty the meter after a power is started."""
         self.value = 0.0
 
 
@@ -41,16 +46,20 @@ def cut_lod(w):
 
 
 def on_screen(b):
+    """Is this fruit alive and visible on screen (so a clone can chase it)?"""
     return b.alive and -b.r < b.x < W + b.r and -b.r < b.y < H
 
 
 class Power:
+    """Base class for the three powers. Each subclass sets its own name, length and colours, and overrides update/draw."""
+    # Defaults. `DURATION` is how long the power lasts (seconds); `world_scale` is how fast the world runs meanwhile (0 = frozen); `blocks_slicing` stops normal slicing.
     name, DURATION, world_scale, blocks_slicing = "", 1.0, 1.0, False
     blade = None  # (outer, mid, core, trail core): replaces the player's blade colours while active
     color = GOLD  # HUD accent
     title = ""
 
     def __init__(self, play):
+        """Remember the game this power belongs to and start its clock at zero."""
         self.play, self.t, self.done = play, 0.0, False
 
     def left(self):
@@ -58,9 +67,11 @@ class Power:
         return max(0.0, 1 - self.t / self.DURATION)
 
     def fx(self, params):
+        """Adjust the screen-effect settings (saturation, zoom...) while the power runs. Does nothing by default."""
         pass
 
     def on_cut(self, b):
+        """Called whenever a fruit is cut while the power runs. Does nothing by default."""
         pass
 
 
@@ -75,6 +86,7 @@ class TimeStop(Power):
     INK = ((14, 18, 30), (92, 108, 146), (226, 232, 248))  # path glow: outer, body, core
 
     def __init__(self, play):
+        """Start recording the cursor's path from where the mouse is now."""
         super().__init__(play)
         self.path = [play.app.mouse]
         self.marked = []  # [body, segment, time marked], in order of first touch
@@ -83,6 +95,7 @@ class TimeStop(Power):
         self.next_cut = 0.0
 
     def update(self, dt):
+        """Two phases. While time is frozen we record the cursor path and mark fruit it crosses; when the timer ends, we cut the marked fruit one by one."""
         p = self.play
         if self.queue is None:
             self.t += dt
@@ -113,6 +126,7 @@ class TimeStop(Power):
             self.done = True
 
     def touch(self, seg):
+        """Mark every fruit the newest bit of path (seg) crosses, if it is not marked yet."""
         for b in self.play.w.bodies:
             if b.alive and all(m[0] is not b for m in self.marked) and seg_hits_circle(*seg, b.x, b.y, b.r * 1.05):
                 self.marked.append([b, seg, self.t])
@@ -122,6 +136,7 @@ class TimeStop(Power):
         return [(b, seg) for b, seg, _ in self.marked if b.alive]
 
     def left(self):
+        """Share of time-stop still to run; 0 once time has resumed."""
         return 0.0 if self.queue is not None else max(0.0, 1 - self.t / self.DURATION)
 
     def strength(self):
@@ -131,11 +146,13 @@ class TimeStop(Power):
         return max(0.0, 1 - self.after / 0.2)
 
     def fx(self, params):
+        """Drain the colour and zoom in slightly while time is held."""
         k = self.strength()
         params["saturation"] = min(params["saturation"], 1 - 0.75 * k)
         params["zoom"] = max(params["zoom"], 1 + 0.02 * k)
 
     def draw(self, L, add, ui):
+        """Draw the light path, rings on marked fruit and the countdown. `L` is the world layer, `add` the glow layer (added on top, so it lights up), `ui` the HUD layer."""
         app, k = self.play.app, self.strength()
         if app.gpu is None and k > 0:  # no post-fx on the CPU: a cool grade stands in for the drained colour
             L.fill(tuple(int(255 - (255 - c) * k) for c in (170, 176, 192)), special_flags=pygame.BLEND_RGB_MULT)
@@ -206,9 +223,11 @@ class TimeStop(Power):
 # ---------------- Shadow Clones ----------------
 
 class Clone:
+    """One ghost blade: its position, velocity, current target and glowing trail."""
     __slots__ = ("i", "x", "y", "vx", "vy", "target", "trail")
 
     def __init__(self, i, x, y, vx, vy):
+        """`i` is the clone's number (0-2), used to spread them out when idle."""
         self.i, self.x, self.y, self.vx, self.vy = i, x, y, vx, vy
         self.target = None
         self.trail = Trail()
@@ -224,10 +243,12 @@ class ShadowClones(Power):
     EMERGE = 0.22  # s the clones fan out of the cursor before they start hunting
 
     def __init__(self, play):
+        """Spawn the three clones fanned out from the cursor."""
         super().__init__(play)
         mx, my = play.app.mouse
         self.clones = []
         for i in range(self.N):  # fanned out of the cursor, so they curve away before turning onto their targets
+            # Angles in radians: start pointing up (-pi/2), then rotate each clone by ~2.1 rad (120 degrees) from the last so they fan out.
             a = -math.pi / 2 + (i - 1) * 2.1
             self.clones.append(Clone(i, mx, my, math.cos(a) * self.SPEED * 0.7, math.sin(a) * self.SPEED * 0.7))
         w = play.w
@@ -246,6 +267,7 @@ class ShadowClones(Power):
         return min(free, key=lambda b: (b.x - c.x) ** 2 + (b.y - c.y) ** 2)
 
     def update(self, dt):
+        """Steer each clone toward its fruit (or orbit the cursor if none), move it, and cut the fruit if it sweeps through it."""
         self.t += dt
         hunting = self.EMERGE <= self.t < self.DURATION
         mx, my = self.play.app.mouse
@@ -281,6 +303,7 @@ class ShadowClones(Power):
             self.done = True
 
     def cut(self, c, b):
+        """Clone `c` slices fruit `b` along its direction of travel."""
         v = math.hypot(c.vx, c.vy) or 1
         ux, uy = c.vx / v, c.vy / v
         r = b.r * 1.5
@@ -289,6 +312,7 @@ class ShadowClones(Power):
         c.target = None
 
     def draw(self, L, add, ui):
+        """Draw each clone's trail, glow and short blade edge, faded in and out at the ends."""
         fade = min(1.0, self.t / 0.1, max(0.0, (self.DURATION + self.FADE - self.t) / self.FADE))
         if fade <= 0:
             return
@@ -317,6 +341,7 @@ class DragonFire(Power):
     FLAME = ((255, 120, 30), (255, 90, 20), (255, 160, 60))
 
     def __init__(self, play):
+        """Start the power with a first fire burst at the cursor."""
         super().__init__(play)
         self.pending = []  # [x, y, delay left, r]: cut fruit about to burst
         self.rings = []  # [x, y, age]
@@ -325,10 +350,12 @@ class DragonFire(Power):
         self.burst(*play.app.mouse, spread=False)
 
     def on_cut(self, b):
+        """Queue a fire burst at each fruit cut while the power lasts (not bombs)."""
         if self.t < self.DURATION and not b.bomb:
             self.pending.append([b.x, b.y, self.IGNITE_DELAY, b.r])
 
     def update(self, dt):
+        """Shed flame from the moving blade, burst the fruit whose short fuse has run out, and age the fire rings."""
         self.t += dt
         app, w = self.play.app, self.play.w
         if self.t < self.DURATION and app.speed > 250:  # the blade sheds flame and embers as it moves
@@ -359,6 +386,7 @@ class DragonFire(Power):
             self.done = True
 
     def burst(self, x, y, spread=True):
+        """A fireball at (x, y); if `spread`, it also sets nearby fruit alight, which burst in turn (a chain reaction)."""
         w = self.play.w
         lod = cut_lod(w)
         self.rings.append([x, y, 0.0])
@@ -383,6 +411,7 @@ class DragonFire(Power):
                     return
 
     def draw(self, L, add, ui):
+        """Draw glows on fruit about to burst, the expanding flame rings and the curling tongues of fire leaping between fruit."""
         art = self.play.app.art
         licks = max(4, round(24 * cut_lod(self.play.w)))
         for x, y, left, r in self.pending[-6:]:  # the cut fruit flares up before it bursts (in a firestorm, the newest)
@@ -417,6 +446,7 @@ class DragonFire(Power):
 
 # ---------------- Play hooks ----------------
 
+# Lookup tables: power name to its class, keyboard key to power name, and the kanji + caption stamped on screen.
 POWERS = {"timestop": TimeStop, "clones": ShadowClones, "dragonfire": DragonFire}
 KEYS = {pygame.K_q: "timestop", pygame.K_w: "clones", pygame.K_e: "dragonfire"}
 STAMPS = {"timestop": ("止", "Time stop"), "clones": ("影", "Shadow clones"), "dragonfire": ("炎", "Dragon fire")}
@@ -451,6 +481,7 @@ def tick_power(play, dt):
 
 
 def on_cut(play, b):
+    """Hook called for every cut: feeds the Ki meter and tells the running power about it."""
     if play.ki:
         play.ki.add(KI_PER_CUT)
     if play.power:

@@ -14,12 +14,17 @@ from .entities import draw_shadow, seg_hits_circle
 from .fx import glow, shade
 from .settings import W, H, GOLD, STEEL
 
+# Chance (0 to 1) that a wave item becomes each hazard. They are tried in order, so the odds add up (19% in total).
 HAZARD_ODDS = {"shuriken": 0.08, "icebomb": 0.05, "golden": 0.03, "chaos": 0.03}
 HAZARDS_FROM = 20.0  # s of game time before the first hazard
 
+# Shuriken numbers, in pixels: speed (px/s), how close it must get to your cursor to hurt you, and its radius for being parried.
 SHURIKEN_SPEED, SHURIKEN_HIT, SHURIKEN_R = 700.0, 22.0, 26.0
+# Parrying: the blade must move faster than PARRY_SPEED px/s; a parry scores PARRY_POINTS; the star bounces back PARRY_BOOST times faster.
 PARRY_SPEED, PARRY_POINTS, PARRY_BOOST = 1500.0, 2, 1.3
+# How long (seconds) an ice bomb freezes your blade, and how long a chaos fruit flips gravity.
 FREEZE_TIME, FLIP_TIME = 2.0, 5.0
+# Golden fruit: hits needed, minimum seconds between hits (so one swipe counts once), points per hit, and the final bonus.
 GOLD_HITS, GOLD_GAP, GOLD_HIT_POINTS, GOLD_BONUS = 5, 0.08, 5, 25
 ICE = (170, 215, 250)
 VIOLET = (170, 100, 255)
@@ -51,6 +56,7 @@ class Shuriken:
         self.age = 0.0
 
     def update(self, dt):
+        """Fly in a straight line and spin. `dt` is the seconds since the last frame; a trail of recent spots is kept for the smear effect."""
         if dt <= 0:
             return
         self.trail = (self.trail + [(self.x, self.y, self.ang)])[-4:]
@@ -66,6 +72,7 @@ class Shuriken:
                 self.y < -80 and self.vy <= 0 or self.y > H + 80 and self.vy >= 0)
 
     def near(self, px, py):
+        """Is the point (px, py), usually the player's cursor, close enough to be hit by the star?"""
         return math.hypot(px - self.x, py - self.y) < SHURIKEN_HIT
 
     def parry(self, dx=0.0, dy=0.0):
@@ -92,6 +99,7 @@ class Hazards:
     """Per-run hazard state on Play (`play.hz`)."""
 
     def __init__(self):
+        """Start a run with no shurikens, no flip and no visual flashes."""
         self.shurikens = []
         self.flip_t = 0.0  # gravity-flip time left (game seconds)
         self.punch = 0.0  # violet pulse on a flip / flip back: 1 easing to 0
@@ -103,6 +111,7 @@ class Hazards:
 # ---------------- Play hooks ----------------
 
 def throw_shuriken(play, x, y, tx, ty):
+    """Create a shuriken at (x, y) flying toward (tx, ty) and add it to the game."""
     s = Shuriken(x, y, tx, ty)
     play.hz.shurikens.append(s)
     play.app.audio.play("shuriken", 0.8)
@@ -181,6 +190,7 @@ def coins(w, x, y, n, speed):
 
 
 def flip(play, on):
+    """Turn the upside-down gravity effect on or off, with a screen punch, stamp and gong."""
     w, hz = play.w, play.hz
     if on:
         hz.flip_t = FLIP_TIME
@@ -263,6 +273,7 @@ def blade_colors(scene):
     return getattr(getattr(scene, "power", None), "blade", None)
 
 
+# Holds the shuriken's shadow image, built the first time it is needed and then reused.
 _SHADOW = {}
 
 

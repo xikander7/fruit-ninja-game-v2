@@ -11,10 +11,12 @@ import wave
 
 import numpy as np
 
+# pygame is only used here to decode the mp3 files; the 'dummy' driver lets it run without a sound card.
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 import pygame
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Tuning knobs for chopping the raw recordings. Levels are in dB: 0 dB is full volume, -40 dB is nearly silent.
 SR = 44100
 GAP_DB = -40.0        # below this level counts as silence
 MIN_GAP = 0.120       # s of silence that separates two hits
@@ -37,10 +39,12 @@ def decode(path):
     """mp3 -> float32 (n, 2) in [-1, 1] at the mixer rate."""
     snd = pygame.mixer.Sound(path)
     rate, fmt, ch = pygame.mixer.get_init()
+    # pygame hands us raw bytes: turn them into numbers, then scale 16-bit integers down to the range -1..1.
     a = np.frombuffer(snd.get_raw(), dtype=np.int16 if fmt == -16 else np.float32).astype(np.float32)
     if fmt == -16:
         a /= 32768.0
     a = a.reshape(-1, ch)
+    # A mono sound is copied to both speakers so every sound has a left and a right channel.
     if ch == 1:
         a = np.repeat(a, 2, axis=1)
     return a[:, :2]
@@ -51,9 +55,11 @@ def split_hits(a):
     n = len(a) // WIN
     if n == 0:
         return []
+    # Loudness is measured in tiny 5 ms slices: each slice's level is its loudest sample.
     env = np.abs(a[: n * WIN]).max(axis=1).reshape(n, WIN).max(axis=1)
     loud = env > 10 ** (GAP_DB / 20)
     gap_w = int(round(MIN_GAP * SR / WIN))
+    # Walk through the slices. A hit starts at the first loud slice and ends once MIN_GAP of quiet has passed.
     hits, start, quiet = [], None, 0
     for i, v in enumerate(loud):
         if v:
@@ -74,12 +80,14 @@ def make_loop(a, overlap):
     """Equal-power crossfade of the tail into the head so the file wraps without a click or hole."""
     k = int(overlap * SR)
     t = np.linspace(0, np.pi / 2, k, dtype=np.float32)[:, None]
+    # Drop the last k samples and blend them into the first k, so the end flows smoothly back into the start when looped.
     out = a[:-k].copy()
     out[:k] = a[-k:] * np.cos(t) + a[:k] * np.sin(t)
     return out
 
 
 def finish(a, fade=True):
+    """Fade both ends (no clicks), then scale the sound so its loudest point sits at PEAK_DB."""
     a = a.copy()
     if fade:
         k = min(int(FADE * SR), len(a) // 2)
@@ -92,6 +100,7 @@ def finish(a, fade=True):
 
 def limit_hit(name, a):
     """Apply per-name min/max length; returns None when the hit should be dropped."""
+    # Find the length limits whose name prefix matches (e.g. 'slash'); other sounds only get a minimum length.
     lo, hi = next((v for k, v in LIMITS.items() if name.startswith(k)), (MIN_HIT, None))
     if len(a) / SR < lo:
         return None
@@ -100,10 +109,12 @@ def limit_hit(name, a):
         k = int(CAP_FADE * SR)
         a[-k:] *= np.linspace(1, 0, k, dtype=np.float32)[:, None]
     a = finish(a)
+    # If the whole hit is still too quiet it was probably just a click, so drop it.
     return a if stats(a)[2] >= MIN_RMS_DB else None
 
 
 def write_wav(path, a):
+    """Save a float array (-1..1) as a 16-bit stereo WAV file."""
     pcm = (np.clip(a, -1, 1) * 32767).astype("<i2")
     with wave.open(path, "wb") as w:
         w.setnchannels(2)
@@ -113,6 +124,7 @@ def write_wav(path, a):
 
 
 def stats(a):
+    """Return (length in seconds, peak level in dB, RMS level in dB). RMS is the sound's average loudness."""
     peak = float(np.abs(a).max())
     rms = float(np.sqrt((a ** 2).mean()))
     db = lambda x: 20 * np.log10(max(x, 1e-9))
@@ -120,12 +132,15 @@ def stats(a):
 
 
 def main():
+    """Decode every source mp3, chop it into hits (or loop it), and write the WAV files."""
+    # Ask for 44.1 kHz, 16-bit, stereo. The assert below makes sure the mixer really gave us that rate.
     pygame.mixer.init(SR, -16, 2, 512)
     assert pygame.mixer.get_init()[0] == SR, "mixer did not give 44.1 kHz"
     with open(os.path.join(ROOT, "assets/raw/audio/manifest.json")) as f:
         manifest = json.load(f)
     out = os.path.join(ROOT, "assets/audio")
     os.makedirs(out, exist_ok=True)
+    # Start clean so sounds that were removed or renamed don't linger from an earlier run.
     for old in os.listdir(out):
         if old.endswith(".wav"):
             os.remove(os.path.join(out, old))
@@ -135,6 +150,7 @@ def main():
         stem = name.replace("_", "")  # audio.py parses <letters><digits>_<n>.wav, so boss_hit -> bosshit_1.wav
         for p in paths:
             a = decode(os.path.join(ROOT, p))
+            # Long loops are kept whole (with a crossfade); every other file is chopped into separate hits.
             if name in WHOLE:
                 parts = [finish(make_loop(a, LOOP_XFADE[name]), fade=False)]
             else:

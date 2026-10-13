@@ -1,13 +1,18 @@
+// rules/fever.js - the Fever mode rules. Part of rules/: pure game logic with no drawing and no browser code, so it can be tested directly in Node.
+// Slice fruit in an unbroken chain to raise a score multiplier (x1 up to x5). At x5, Fever starts for 8 seconds
+// and fruit rains from the sky. A miss or bomb breaks the chain.
 // Fever: the cut chain, its score multiplier and the fruit rain once it peaks (ninja/fever.py).
 import { REGULAR, WEIGHTS } from "../config.js";
 import { weighted } from "../util.js";
 
+// Tuning: every 10 cuts adds 1 to the multiplier; MAX_MULT is the cap; FEVER_TIME is its length in seconds.
 export const CHAIN_STEP = 10; // cuts per multiplier step
 export const MAX_MULT = 5; // reaching it starts Fever
 export const FEVER_TIME = 8.0;
 export const RAIN_EVERY = 0.12; // s between rain fruit
 export const GRADE = [255, 236, 200]; // warm gold multiply over the world during Fever
 
+// `rnd` is the random function to use; tests pass a fixed one so results are predictable.
 export class Fever {
   constructor(rnd = Math.random) {
     this.rnd = rnd;
@@ -18,10 +23,12 @@ export class Fever {
     this.pop = 0; // 1 the moment the multiplier steps up, easing to 0 (HUD badge)
   }
 
+  // The current score multiplier (always MAX_MULT during Fever).
   get mult() {
     return this.active ? MAX_MULT : Math.min(MAX_MULT, 1 + Math.floor(this.chain / CHAIN_STEP));
   }
 
+  // Apply the multiplier to a base score.
   points(base) {
     return base * this.mult;
   }
@@ -48,9 +55,11 @@ export class Fever {
   }
 
   /** Advance by `dt` game seconds; returns the fruit kinds to rain this frame. */
+  // Counts Fever down and returns the list of fruit kinds to drop this frame. Dropping is metered by RAIN_EVERY.
   update(dt) {
     this.pop = Math.max(0, this.pop - dt * 3);
     if (!this.active || dt <= 0) return []; // dt 0: Time Stop holds the clock
+    // Don't rain for time that is past the end of Fever.
     const run = Math.min(dt, this.t); // no rain past the end of Fever
     this.t -= dt;
     this.rainT -= run;

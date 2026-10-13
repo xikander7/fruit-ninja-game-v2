@@ -20,22 +20,29 @@ SIZE = 120  # font size the stencils are rendered at (art.GLYPH_SIZE)
 
 
 def main():
+    """Download the font once, find every kanji used in the game, and save one PNG stencil for each."""
     RAW.mkdir(parents=True, exist_ok=True)
+    # Download the font and its license once; later runs reuse the files already on disk.
     for name, remote in ((FONT, FONT), ("OFL-ZenKakuGothicNew.txt", "OFL.txt")):
         if not (RAW / name).exists():
             urllib.request.urlretrieve(URL + remote, RAW / name)
+    # Collect every Chinese/Japanese character (kanji) that appears in the game's Python code.
     chars = set()
     for f in (ROOT / "ninja").glob("*.py"):
         chars |= set(re.findall(r"[㐀-鿿]", f.read_text(encoding="utf-8")))
+    # pygame draws the text; the 'dummy' video driver means no window pops up.
     os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
     import pygame
     pygame.init()
     font = pygame.font.Font(str(RAW / FONT), SIZE)
+    # Wipe old stencils so characters the game no longer uses don't stay behind.
     if OUT.exists():
         shutil.rmtree(OUT)
     OUT.mkdir()
+    # One PNG per character, named by its Unicode number in hex (for example 5fcd.png).
     for c in sorted(chars):
         pygame.image.save(font.render(c, True, (0, 0, 0)), str(OUT / f"{ord(c):x}.png"))
+    # The font's license must travel along with the files made from it.
     shutil.copy2(RAW / "OFL-ZenKakuGothicNew.txt", OUT / "OFL-ZenKakuGothicNew.txt")
     print(f"{len(chars)} glyphs -> {OUT}: {''.join(sorted(chars))}")
 

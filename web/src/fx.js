@@ -1,11 +1,18 @@
 // Juice: particles, stains, blade trail, screen shake, popups and hanko stamps (ninja/fx.py).
+// "Juice" means the visual effects that make cuts feel good. This file has: particles (juice drops,
+// sparks, smoke, embers), wall stains, the blade trail, screen shake, score popups and the red
+// "hanko" seal stamps. World (world.js) owns one of each and calls update(dt) then draw() every frame.
+// Drawing goes to two layers: L is the normal picture, add is an additive light layer for glows.
 import { W, H, GRAVITY, WASHI, GOLD } from "./config.js";
 import { uniform, randint, choice, gauss, shade, tint, rgb, rgba, TAU, rad, deg } from "./util.js";
 import { addGlow, softImg, catmullRom, makeCanvas, getCtx, circle, line, polygon } from "./gfx.js";
 import { blit, rectAt } from "./ui.js";
 
+// The splash photos are stored at this fraction of their size; the code scales them back up when drawn.
 const SPLASH_SCALE = 0.62;
 
+// One particle. "kind" picks how it moves and looks; "grav" multiplies gravity (0 floats, 1 falls, negative rises).
+// life counts down in seconds; max remembers the starting life so we can tell how far along it is.
 class P {
   constructor(x, y, vx, vy, life, size, color, kind, grav) {
     this.x = x; this.y = y; this.vx = vx; this.vy = vy;
@@ -16,6 +23,8 @@ class P {
   }
 }
 
+// A pool of particles with helper "emitters" (drop, juice, splash, sparks, smoke...) that spawn many at once.
+// CAP limits the count so a flurry of cuts can't slow the game down.
 export class Particles {
   constructor(art, cap = 1400) {
     this.art = art;
@@ -24,6 +33,7 @@ export class Particles {
     this.blur = 1.0; // slow-mo time scale: streaks shorten in slow-mo, like real motion blur
   }
 
+  // Spawns one particle (positions in px, velocities in px/s, life in seconds); returns null when the pool is full.
   add(x, y, vx, vy, life, size, color, kind, grav = 1.0) {
     if (this.items.length < this.CAP) {
       const p = new P(x, y, vx, vy, life, size, color, kind, grav);
@@ -33,6 +43,7 @@ export class Particles {
     return null;
   }
 
+  // A single juice droplet.
   drop(x, y, vx, vy, life, size, color) {
     const p = this.add(x, y, vx, vy, life, size, color, "drop");
     if (p) p.c2 = tint(color, 0.55); // wet highlight along the droplet
@@ -42,6 +53,7 @@ export class Particles {
    * translucent sheet along the cut and a wet emissive mist. `lod` < 1 thins every count (cut storms). */
   juice(x, y, color, nx, ny, n = 35, spread = 30, lod = 1.0) {
     n = Math.round(n * lod);
+    // (nx, ny) is the cut's normal (the direction straight out of the cut face); (ux, uy) points along the cut.
     const ux = ny, uy = -nx; // along the cut
     if (lod >= 0.5) {
       for (const side of [1, -1]) { // the sheet of juice torn off the cut face; gone in ~0.15 s
@@ -113,6 +125,7 @@ export class Particles {
     return p;
   }
 
+  // Bright streaks flying out in all directions (hits, parries, explosions).
   sparks(x, y, color, n = 30, speed = 700, life = 0.6) {
     for (let i = 0; i < n; i++) {
       const a = uniform(0, TAU), sp = uniform(0.2, 1) * speed;
@@ -120,6 +133,7 @@ export class Particles {
     }
   }
 
+  // Grey puffs that expand and drift up slowly (negative gravity makes them rise).
   smoke(x, y, n = 18) {
     for (let i = 0; i < n; i++) {
       const a = uniform(0, TAU), sp = uniform(30, 220), g = randint(40, 80);
@@ -127,6 +141,7 @@ export class Particles {
     }
   }
 
+  // A spray of droplets, used for ink-like bursts.
   ink(x, y, color, n = 16) {
     for (let i = 0; i < n; i++) {
       const a = uniform(0, TAU), sp = uniform(150, 480);
@@ -147,6 +162,7 @@ export class Particles {
     }
   }
 
+  // Glowing orange sparks that wobble as they float.
   embers(x, y, n = 40, speed = 650) {
     const cols = [[255, 150, 50], [255, 190, 90], [255, 110, 30]];
     for (let i = 0; i < n; i++) {
@@ -163,12 +179,14 @@ export class Particles {
     if (p) p.vr = uniform(1.5, 4.0); // twinkle rate
   }
 
+  // A single ember rising from the bottom edge of the area, like heat off a lantern.
   lanternEmber(box = { x: 0, w: W, bottom: H }) {
     const p = this.add(box.x + uniform(box.w * 0.05, box.w * 0.95), box.bottom + 10, uniform(-20, 20), uniform(-110, -60),
       uniform(4, 7), 2, [255, 140, 50], "ember", -0.01);
     if (p) p.vr = uniform(2, 5);
   }
 
+  // Moves every particle one step. Each kind has its own drag (air resistance: velocity multiplied by a number below 1 each step).
   update(dt) {
     const alive = [];
     for (const p of this.items) {
@@ -192,11 +210,13 @@ export class Particles {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (k !== "mote" && k !== "ember") p.rot += p.vr * dt;
+      // Keep only particles that haven't fallen off the bottom of the screen.
       if (p.y < H + 60) alive.push(p);
     }
     this.items = alive;
   }
 
+  // Draws each particle according to its kind; t goes from 1 (just born) to 0 (about to vanish).
   draw(L, add) {
     L.lineCap = "round";
     for (const p of this.items) {
@@ -239,6 +259,7 @@ export class Particles {
     }
   }
 
+  // A droplet is drawn as a stretched capsule along its velocity (it looks like motion blur); big ones get a round head, a tail and a highlight.
   drawDrop(L, p, t) {
     let col = p.color, c2 = p.c2, r;
     if (p.size >= 2.8) { // heavy drop: shrinks away and sinks into the dark wall instead of popping off
@@ -269,6 +290,7 @@ export class Particles {
     line(L, tx, ty, p.x - (vx / sp) * r * 0.4, p.y - (vy / sp) * r * 0.4, rgb(c2), Math.max(1, Math.trunc(r * 0.5)));
   }
 
+  // A tumbling bomb fragment: a dark polygon with one shiny edge, plus a glowing hot edge that cools down.
   drawShard(L, add, p, t) {
     const a = rad(p.rot);
     const pts = p.shape.map(([rr, aa]) => [p.x + Math.cos(a + aa) * rr * p.size, p.y + Math.sin(a + aa) * rr * p.size]);
@@ -297,6 +319,7 @@ export class Particles {
 
 // ---------------- stains ----------------
 
+// Cache of pre-drawn stain images so repeated cuts of the same fruit don't redraw blobs.
 const STAIN_CACHE = new Map();
 
 /** A juice splash: a translucent tinted blob with a darker rim where the juice pools, a few specular glints. */
@@ -304,10 +327,12 @@ function wetStain(color, r, variant) {
   const key = `${color}|${r}|${variant}`;
   let v = STAIN_CACHE.get(key);
   if (v) return v;
+  // Draw at 2x size, then shrink: this smooths the edges (supersampling).
   const k = 2; // supersample
   const size = Math.trunc(r * 5), hgt = Math.trunc(r * 6.2);
   const s = makeCanvas(size * k, hgt * k), g = getCtx(s);
   const c = size / 2;
+  // A stain is many overlapping circles [x, y, radius]: a big middle blob, medium blobs around it, tiny ones on the edge.
   const blobs = [[c, c, r * 0.72]];
   for (let i = 0, n = randint(8, 12); i < n; i++) {
     const a = uniform(0, TAU), d = uniform(0.35, 0.85) * r;
@@ -322,6 +347,7 @@ function wetStain(color, r, variant) {
     const a = uniform(0, TAU), d = uniform(1.25, 2.2) * r;
     flecks.push([c + Math.cos(a) * d, c + Math.sin(a) * d, uniform(0.025, 0.07) * r]);
   }
+  // Each blob is drawn twice: a darker slightly larger circle (the rim where juice pools), then the lighter body on top.
   const rim = rgba(shade(color, 0.4), 225 / 255), body = rgba(shade(color, 0.85), 120 / 255);
   for (const [x, y, br] of [...blobs, ...flecks]) circle(g, x * k, y * k, (br + Math.max(1.5, br * 0.16)) * k, rim);
   for (const [x, y, br] of blobs) circle(g, x * k, y * k, br * k, body);
@@ -334,6 +360,7 @@ function wetStain(color, r, variant) {
   const ig = getCtx(img);
   ig.imageSmoothingQuality = "high";
   ig.drawImage(s, 0, 0, size, hgt);
+  // Drips: [x, y, length, width] strands that will run down the wall as the stain ages.
   const drips = [];
   for (let i = 0, n = randint(2, 4); i < n; i++) {
     drips.push([c + uniform(-0.55, 0.55) * r, c + r * 0.3, uniform(0.6, 1.8) * r, uniform(0.06, 0.11) * r]);
@@ -351,6 +378,7 @@ export class Stains {
     this.items = [];
   }
 
+  // Adds a stain at (x, y); the oldest is dropped beyond 30 so the wall doesn't fill up.
   add(color, r, x, y) {
     const { img, drips } = wetStain(color, r, randint(0, 2));
     const own = makeCanvas(img.width, img.height); // each stain grows its own drips
@@ -378,6 +406,7 @@ export class Stains {
           circle(g, dx, end, tip * 1.35, s.col);
         }
       }
+      // After the drips finish growing, fade the stain out with a curve (1 - k*k) that fades slowly at first, then faster.
       const k = s.age < this.GROW ? 0 : (s.age - this.GROW) / this.FADE;
       L.globalAlpha = 1 - k * k;
       L.drawImage(s.own, Math.round(s.x - s.own.width / 2), Math.round(s.y - s.own.width / 2));
@@ -388,16 +417,19 @@ export class Stains {
 
 // ---------------- blade trail ----------------
 
+// The glowing ribbon that follows the pointer. Points are [x, y, time]; they expire after LIFE seconds.
 export class Trail {
   constructor() {
     this.LIFE = 0.13;
     this.pts = [];
   }
   add(x, y, t) { this.pts.push([x, y, t]); }
+  // Marks a break so two separate swipes aren't joined by a line.
   cut() { this.pts.push(null); } // break between swipes
   update(now) {
     while (this.pts.length && (this.pts[0] === null || now - this.pts[0][2] > this.LIFE)) this.pts.shift();
   }
+  // Splits the points at each break into separate strokes, ignoring ones with fewer than 2 points.
   runs() {
     const runs = [];
     let cur = [];
@@ -413,6 +445,7 @@ export class Trail {
     const op = ctx.globalCompositeOperation;
     ctx.globalCompositeOperation = "source-over"; // each narrower layer replaces the wider one under it (halo, body, core)
     const core = colors.length > 3 ? colors[3] : [255, 255, 255];
+    // Layers drawn widest to narrowest (halo 18 px, body 12 px, core 4.5 px).
     const layers = (outer ? [[colors[0], 18]] : []).concat([[colors[1], 12], [core, 4.5]]);
     for (let run of this.runs()) {
       run = catmullRom(run, 4);
@@ -425,7 +458,9 @@ export class Trail {
           const dx = b[0] - a[0], dy = b[1] - a[1];
           const L = Math.hypot(dx, dy) || 1;
           const age = 1 - (now - t) / this.LIFE;
+          // The ribbon is thin at the tail (old end) and wide at the tip, and every point shrinks as it ages.
           const w = width * Math.max(0, age) * (i / (n - 1)) ** 0.6;
+          // Offset each point sideways by w along the perpendicular direction (-dy, dx) to get the ribbon's two edges.
           left.push([x - (dy / L) * w, y + (dx / L) * w]);
           right.push([x + (dy / L) * w, y - (dx / L) * w]);
         }
@@ -440,10 +475,13 @@ export class Trail {
 
 // ---------------- screen shake ----------------
 
+// "Trauma" model of screen shake: kick() adds trauma (0-1), it decays over time, and the visible shake is trauma squared.
+// Squaring means small bumps are subtle while big ones feel strong.
 export class Shake {
   constructor() { this.trauma = 0; this.t = 0; }
   kick(amount) { this.trauma = Math.min(1, this.trauma + amount); }
   update(dt) { this.t += dt; this.trauma = Math.max(0, this.trauma - dt * 1.6); }
+  // Returns the [x, y] pixel offset to shift the picture by; layered sine waves of different speeds look random but are smooth.
   offset() {
     const k = this.trauma ** 2 * 26;
     return [k * Math.sin(this.t * 71.3) * Math.cos(this.t * 13.1), k * Math.sin(this.t * 59.7 + 1.3)];
@@ -487,7 +525,10 @@ export function stampScale(age) {
 
 /** A hanko seal that slams onto the screen over its own ink bleed. The game's signature beat. */
 export class Stamp {
+  // Animation: the seal drops in with a scale change, ink blots out from under it, then the caption fades in below.
+  // x and y are clamped so the seal and caption always stay on screen.
   constructor(art, glyph, caption, x, y, size = 120, color = WASHI, bonus = null, hold = false) {
+    // DUR = how long the stamp stays (seconds); LAND = when the seal "hits the paper".
     this.DUR = 1.4; this.LAND = 0.11;
     const f = art.fonts;
     this.fonts = f;
@@ -505,6 +546,7 @@ export class Stamp {
     this.hold = hold; // stays on screen (results) instead of fading after DUR
   }
 
+  // Returns true while the stamp should still be shown.
   update(dt) {
     this.age += dt;
     return this.hold || this.age < this.DUR;

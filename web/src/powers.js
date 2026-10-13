@@ -1,3 +1,8 @@
+// powers.js - the three superpowers you unlock by filling the Ki meter.
+// Ki is "energy" earned by slicing; when the meter is full you can spend it on one power.
+// Each power is a small class with the same shape: update(dt) moves it, draw() paints it, fx() tweaks the screen,
+// onCut() reacts to a slice, and `done` becomes true when it is over.
+//
 // Ki and the three superpowers: Time Stop, Shadow Clones and Dragon Fire (ninja/powers.py).
 // Play owns a KiMeter (only in modes with the "powers" feature) and at most one active power, and keeps thin hooks:
 // useChosenPower (keys Q/W/E, right click, the seals), tickPower once a frame, onCut from Play.hit, power.fx in
@@ -14,14 +19,19 @@ function cutLod(w) {
   return Math.min(1.0, w.HEAT_LOD / Math.max(1.0, w.cutHeat));
 }
 
+// Is this fruit currently inside the visible stage? Used so clones only chase fruit you can see.
 const onScreen = (b) => b.alive && -b.r < b.x && b.x < W + b.r && -b.r < b.y && b.y < H;
 
+// Base class for all powers: shared fields with safe defaults that each power overrides.
+// `play` is the running game (Play in play.js).
 class Power {
   constructor(play) {
     this.play = play; this.t = 0; this.done = false;
+    // Colours that replace the normal blade colours while the power is active.
     this.blade = null; // [outer, mid, core, trail core]: replaces the player's blade colours while active
     this.color = GOLD; // HUD accent
     this.title = "";
+    // worldScale multiplies how fast the world moves (0 freezes it). blocksSlicing stops normal slicing.
     this.worldScale = 1.0; this.blocksSlicing = false;
   }
   left() { return Math.max(0, 1 - this.t / this.DURATION); } // share of the power's time still to run (HUD bar)
@@ -29,6 +39,7 @@ class Power {
   onCut() {}
 }
 
+// Time Stop: freeze the world, draw a path with the pointer, then every fruit on the path is sliced.
 // ---------------- Time Stop ----------------
 
 /** The world holds its breath for 3 s: the pointer draws a path of light, then every fruit it crossed is cut in
@@ -38,6 +49,7 @@ class TimeStop extends Power {
     super(play);
     this.name = "timestop"; this.DURATION = 3.0; this.worldScale = 0.0; this.blocksSlicing = true;
     this.title = "TIME STOP"; this.color = [214, 222, 236];
+    // Tuning: GAP is the delay between each resolution cut; INK are the three glow colours of the path.
     this.GAP = 0.04; // s between resolution cuts
     this.INK = [[14, 18, 30], [92, 108, 146], [226, 232, 248]]; // path glow: outer, body, core
     this.path = [[...play.app.mouse]];
@@ -48,6 +60,8 @@ class TimeStop extends Power {
     this.retrace = 0.18;
   }
 
+  // Phase 1 (queue is null): time is stopped, the pointer path is recorded and fruit it crosses are "marked".
+  // Phase 2: time resumes and the marked fruit are cut one by one.
   update(dt) {
     const p = this.play;
     if (this.queue === null) {
@@ -83,6 +97,7 @@ class TimeStop extends Power {
     if (!this.queue.length && this.after >= 0.3) this.done = true;
   }
 
+  // Mark any fruit this path piece crosses (each fruit only once, in the order it was first touched).
   touch(seg) {
     for (const b of this.play.w.bodies) {
       if (b.alive && this.marked.every((m) => m[0] !== b) && segHitsCircle(...seg, b.x, b.y, b.r * 1.05)) this.marked.push([b, seg, this.t]);
@@ -97,12 +112,14 @@ class TimeStop extends Power {
     return Math.max(0.0, 1 - this.after / 0.2);
   }
 
+  // Post-effects: the screen drains of colour and zooms a touch while time is held.
   fx(params) {
     const k = this.strength();
     params.saturation = Math.min(params.saturation, 1 - 0.75 * k);
     params.zoom = Math.max(params.zoom, 1 + 0.02 * k);
   }
 
+  // L = normal layer, add = glowing additive layer, ui = interface layer (the countdown ring is UI).
   draw(L, add, ui) {
     const app = this.play.app;
     const fade = this.queue === null ? 1.0 : Math.max(0.0, 1 - this.after / 0.3);
@@ -121,12 +138,14 @@ class TimeStop extends Power {
   /** A brush stroke of light: thick where the hand moved slowly, thin on fast flicks, tapering at both ends.
    * Once time resumes a bright head races along it, retracing the cut. */
   drawPath(add, fade) {
+    // Smooth the recorded points into a curve (Catmull-Rom spline), then measure the distance travelled along it (cum).
     const pts = catmullRom(this.path.slice(-300), 2);
     const n = pts.length;
     const cum = [0.0];
     for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
     const total = cum[n - 1] || 1;
     const head = this.queue === null ? null : Math.min(1.0, this.after / this.retrace) * total;
+    // For each point, store the sideways offset that gives the stroke its thickness.
     const prof = []; // (x, y, unit normal * width) once; each layer scales it
     for (let i = 0; i < n; i++) {
       const [x, y] = pts[i];
@@ -134,6 +153,7 @@ class TimeStop extends Power {
       const dx = b[0] - a[0], dy = b[1] - a[1];
       const seg = Math.hypot(dx, dy) || 1;
       const c = cum[i];
+      // Slow hand = thick wet stroke; fast flick = thin stroke.
       const speed = Math.max(0.4, Math.min(1.25, 1.45 - seg / 28)); // slow hand, wet brush
       const taper = Math.min(1.0, c / 60, ((total - c) / 90) ** 0.7 + 0.15);
       const grain = 0.82 + 0.12 * Math.sin(c / 23) + 0.06 * Math.sin(c / 6.3); // the bristles never lay down evenly
@@ -142,6 +162,7 @@ class TimeStop extends Power {
     }
     const op = add.globalCompositeOperation;
     add.globalCompositeOperation = "source-over";
+    // Three stacked layers (wide dark, medium, thin bright core) make a glowing brush stroke.
     [2.6, 1.0, 0.32].forEach((wk, i) => {
       const left = prof.map(([x, y, nx, ny]) => [x + nx * wk, y + ny * wk]);
       const right = prof.slice().reverse().map(([x, y, nx, ny]) => [x - nx * wk, y - ny * wk]);
@@ -176,8 +197,10 @@ class TimeStop extends Power {
   }
 }
 
+// Shadow Clones: three ghost blades chase fruit automatically for 5 seconds.
 // ---------------- Shadow Clones ----------------
 
+// One ghost blade: position (x, y), velocity (vx, vy), the fruit it is chasing, and its trail.
 class Clone {
   constructor(i, x, y, vx, vy) {
     Object.assign(this, { i, x, y, vx, vy, target: null, trail: new Trail() });
@@ -190,12 +213,14 @@ class ShadowClones extends Power {
     super(play);
     this.name = "clones"; this.DURATION = 5.0;
     this.title = "SHADOW CLONES"; this.color = [176, 150, 232];
+    // Tuning: N clones, SPEED in pixels per second, FADE seconds to fade out at the end, GHOST are the purple trail colours.
     this.N = 3; this.SPEED = 1600; this.FADE = 0.3;
     this.GHOST = [[48, 26, 92], [104, 70, 178], [196, 172, 250], [206, 186, 255]];
     this.EMERGE = 0.22; // s the clones fan out of the cursor before they start hunting
     const [mx, my] = play.app.mouse;
     this.clones = [];
     for (let i = 0; i < this.N; i++) { // fanned out of the cursor, so they curve away before turning onto their targets
+      // Spread the three clones out in a fan, starting from pointing up.
       const a = -Math.PI / 2 + (i - 1) * 2.1;
       this.clones.push(new Clone(i, mx, my, Math.cos(a) * this.SPEED * 0.7, Math.sin(a) * this.SPEED * 0.7));
     }
@@ -222,6 +247,8 @@ class ShadowClones extends Power {
     return best;
   }
 
+  // Steering: each clone accelerates toward its target. It aims at a point, turns its velocity toward it, and the cut happens
+  // when its path this frame passes through the fruit.
   update(dt) {
     this.t += dt;
     const hunting = this.EMERGE <= this.t && this.t < this.DURATION;
@@ -257,6 +284,7 @@ class ShadowClones extends Power {
     if (this.t >= this.DURATION + this.FADE) this.done = true;
   }
 
+  // A clone slices fruit `b`: build a short blade segment along the clone's direction and score it like a normal hit.
   cut(c, b) {
     const v = Math.hypot(c.vx, c.vy) || 1;
     const ux = c.vx / v, uy = c.vy / v;
@@ -266,6 +294,7 @@ class ShadowClones extends Power {
     c.target = null;
   }
 
+  // Each clone is a glowing trail with a short bright blade at its head.
   draw(L, add) {
     const fade = Math.min(1.0, this.t / 0.1, Math.max(0.0, (this.DURATION + this.FADE - this.t) / this.FADE));
     if (fade <= 0) return;
@@ -281,6 +310,7 @@ class ShadowClones extends Power {
   }
 }
 
+// Dragon Fire: the blade burns, and each fruit it cuts explodes in flames that set nearby fruit alight too.
 // ---------------- Dragon Fire ----------------
 
 /** For 6 s the blade burns: a fruit it cuts flares and bursts after 0.15 s, and the burst sets every fruit
@@ -290,10 +320,12 @@ class DragonFire extends Power {
     super(play);
     this.name = "dragonfire"; this.DURATION = 6.0;
     this.title = "DRAGON FIRE"; this.color = [255, 146, 60];
+    // Tuning: IGNITE_DELAY is the pause before a cut fruit bursts; RADIUS (pixels) is how far the fire spreads.
     this.IGNITE_DELAY = 0.15; this.RADIUS = 140;
     this.RING = 0.4; // s for a fire ring to spread
     this.blade = [[150, 26, 0], [255, 96, 14], [255, 196, 96], [255, 226, 160]];
     this.FLAME = [[255, 120, 30], [255, 90, 20], [255, 160, 60]];
+    // Bookkeeping for effects in flight (see each comment). `emit` carries leftover fractions of a particle between frames.
     this.pending = []; // [x, y, delay left, r]: cut fruit about to burst
     this.rings = []; // [x, y, age]
     this.jumps = []; // [x0, y0, x1, y1, age, bend]: the fire leaping to the next fruit
@@ -301,14 +333,17 @@ class DragonFire extends Power {
     this.burst(...play.app.mouse, false);
   }
 
+  // Called for every cut while the power is on: queue a burst (but never ignite bombs).
   onCut(b) {
     if (this.t < this.DURATION && !b.bomb) this.pending.push([b.x, b.y, this.IGNITE_DELAY, b.r]);
   }
 
+  // Each frame: shed flame while the blade moves fast (app.speed in pixels/second), then count down pending bursts and age the rings and flame jumps.
   update(dt) {
     this.t += dt;
     const app = this.play.app, w = this.play.w;
     if (this.t < this.DURATION && app.speed > 250) { // the blade sheds flame and embers as it moves
+      // 160 particles per second, accumulated as a fraction and spent one whole particle at a time.
       this.emit += dt * 160;
       const [mx, my] = app.mouse;
       while (this.emit >= 1) {
@@ -331,8 +366,10 @@ class DragonFire extends Power {
     if (this.t >= this.DURATION && !this.pending.length && !this.rings.length) this.done = true;
   }
 
+  // Explosion of fire at (x, y). With spread=true it also ignites fruit within RADIUS by cutting them.
   burst(x, y, spread = true) {
     const w = this.play.w;
+    // In a storm of cuts, use fewer particles so the game does not slow down.
     const lod = cutLod(w);
     this.rings.push([x, y, 0.0]);
     w.particles.embers(x, y, Math.round(24 * lod * lod), 480); // embers linger: thin them hardest
@@ -356,6 +393,7 @@ class DragonFire extends Power {
   }
 
   draw(L, add) {
+    // "Licks" are the small flame blobs drawn around each expanding fire ring.
     const licks = Math.max(4, Math.round(24 * cutLod(this.play.w)));
     for (const [x, y, left, r] of this.pending.slice(-6)) { // the cut fruit flares up before it bursts (in a firestorm, the newest)
       const u = 1 - left / this.IGNITE_DELAY;
@@ -388,8 +426,10 @@ class DragonFire extends Power {
   }
 }
 
+// The functions below are what Play calls. Everything above stays inside this file.
 // ---------------- Play hooks ----------------
 
+// Lookup tables: name -> class, key -> name, name -> [seal symbol, caption].
 const POWERS = { timestop: TimeStop, clones: ShadowClones, dragonfire: DragonFire };
 export const KEYS = { q: "timestop", w: "clones", e: "dragonfire" };
 const STAMPS = { timestop: ["止", "Time stop"], clones: ["影", "Shadow clones"], dragonfire: ["炎", "Dragon fire"] };
@@ -422,6 +462,7 @@ export function tickPower(play, dt) {
   play.w.powerScale = play.power ? play.power.worldScale : 1.0;
 }
 
+// Called by Play for every normal cut: earns Ki and lets the active power react.
 export function onCut(play, b) {
   if (play.ki) play.ki.add(KI_PER_CUT);
   if (play.power) play.power.onCut(b);

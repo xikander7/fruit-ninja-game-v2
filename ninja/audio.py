@@ -9,11 +9,17 @@ import pygame
 
 from .settings import resource_path
 
+# SR is the sample rate: how many numbers per second describe the sound wave. 22050 is plenty for game effects.
+# If the sound files are missing, every sound below is built from scratch with maths ("synthesized"): a sound is just a long list of numbers between -1 and 1.
+# SR is the sample rate: how many numbers per second describe the sound wave. 22050 is plenty for game effects.
+# If the sound files are missing, every sound below is built from scratch with maths ("synthesized"): a sound is just a long list of numbers between -1 and 1.
 SR = 22050
+# The notes the music is built from: a five-note Japanese scale, as steps (semitones) above the starting note.
 IN_SCALE = [0, 1, 5, 7, 8]  # Japanese "in" (miyako-bushi) scale, semitones over the root
 
 
 def _midi(n):
+    """Convert a MIDI note number (60 = middle C, 69 = A) into a frequency in Hertz."""
     return 440.0 * 2 ** ((n - 69) / 12)
 
 
@@ -31,14 +37,17 @@ def _svf(samples, cutoffs, q=0.7, mode="band"):
 
 
 def _sweep(n, a, b):
+    """A list of n values gliding smoothly from a to b (a rising or falling pitch or filter setting)."""
     return [a * (b / a) ** (i / max(1, n - 1)) for i in range(n)]
 
 
 def _noise(n, rng):
+    """n random numbers: white noise, the raw hiss that swooshes and splats are carved from."""
     return [rng.uniform(-1, 1) for _ in range(n)]
 
 
 def _sine_drop(n, f0, f1, decay):
+    """A pure tone that slides from pitch f0 down to f1 and fades out; the body of drum thumps and squelches."""
     out, ph = [], 0.0
     for i in range(n):
         f = f0 * (f1 / f0) ** (i / n)
@@ -48,6 +57,7 @@ def _sine_drop(n, f0, f1, decay):
 
 
 def _mix(*tracks):
+    """Add several (samples, gain) tracks together into one sound, padding the shorter ones."""
     n = max(len(t) for t, _ in tracks)
     out = [0.0] * n
     for t, g in tracks:
@@ -62,6 +72,8 @@ def pluck(freq, dur, rng, bright=0.5):
     buf = _svf(_noise(period, rng), [freq * (2 + bright * 8)] * period, 0.5, "low")
     n = int(dur * SR)
     out = [0.0] * n
+    # Karplus-Strong: loop a burst of noise and average each value with its neighbour every pass. The loop length sets the pitch,
+    # and the averaging slowly smooths the noise into a plucked-string tone. damp makes it die away.
     damp = 0.996
     for i in range(n):
         j = i % period
@@ -72,6 +84,7 @@ def pluck(freq, dur, rng, bright=0.5):
 
 
 def taiko(rng, dur=0.5, f0=120, f1=52):
+    """A synthesized Japanese drum hit: a low dropping thump plus a short noisy slap on top."""
     n = int(dur * SR)
     body = _sine_drop(n, f0, f1, dur * 0.35)
     k = int(0.04 * SR)
@@ -80,12 +93,14 @@ def taiko(rng, dur=0.5, f0=120, f1=52):
 
 
 def swoosh(rng, dur=0.17, f0=2400, f1=500):
+    """A synthesized blade whoosh: noise filtered by a sweeping pitch, faded in and out smoothly."""
     n = int(dur * SR)
     s = _svf(_noise(n, rng), _sweep(n, f0, f1), 0.35)
     return [x * math.sin(math.pi * i / n) ** 1.5 for i, x in enumerate(s)]
 
 
 def splat(rng):
+    """A synthesized wet squelch: filtered noise, a short pitch drop and a tiny crack."""
     n = int(0.22 * SR)
     goo = _svf(_noise(n, rng), _sweep(n, 1400, 180), 0.5, "low")
     goo = [x * math.exp(-i / (0.05 * SR)) for i, x in enumerate(goo)]
@@ -95,6 +110,7 @@ def splat(rng):
 
 
 def explosion(rng):
+    """A synthesized bomb blast: a rumble, a low thump and a sharp crack."""
     n = int(1.5 * SR)
     rumble = _svf(_noise(n, rng), _sweep(n, 900, 60), 0.6, "low")
     rumble = [x * math.exp(-i / (0.35 * SR)) for i, x in enumerate(rumble)]
@@ -104,6 +120,7 @@ def explosion(rng):
 
 
 def fuse(rng):
+    """A synthesized sizzling fuse: high hiss with random crackle pops."""
     n = int(1.0 * SR)
     hiss = _svf(_noise(n, rng), [5000] * n, 0.8, "high")
     out = [x * 0.25 for x in hiss]
@@ -115,11 +132,13 @@ def fuse(rng):
 
 
 def tick(rng):
+    """A short synthesized two-tone click (UI tick)."""
     n = int(0.08 * SR)
     return [(math.sin(math.tau * 1150 * i / SR) + 0.5 * math.sin(math.tau * 1730 * i / SR)) * math.exp(-i / (0.012 * SR)) for i in range(n)]
 
 
 def arpeggio(rng, notes, gap, dur=0.9):
+    """Play the MIDI `notes` one after another, `gap` seconds apart, each as a plucked string. Used for the combo and power-up chimes."""
     out = [0.0] * int((gap * len(notes) + dur) * SR)
     for k, m in enumerate(notes):
         p = pluck(_midi(m), dur, rng, 0.8)
@@ -169,6 +188,8 @@ def music(rng):
     return out
 
 
+# Where the recorded sound files live and how they are wired to the game's sound names.
+# Files are named like `slash1_2.wav`: the letters at the start ("slash") pick the group listed in GROUPS.
 AUDIO_DIR = str(resource_path("assets", "audio"))
 # (boss_hit/boss_roar files are bosshit_N/bossroar_N: the filename regex below allows no underscore in a stem)
 # file prefix -> game sound name (ui clicks double as the quiet "throw" whoosh)
@@ -209,7 +230,9 @@ def _load_files(folder):
 
 
 class Audio:
+    """Loads or synthesizes every sound and plays them. If no sound device exists the game just runs silently."""
     def __init__(self, folder=AUDIO_DIR):
+        """Open the sound device, reserve channels for the looping fuse/music/fever layers, load recorded files, and synthesize any missing sound."""
         global SR
         self.ok = False
         self.muted = False
@@ -220,6 +243,7 @@ class Audio:
             return  # no audio device: the game still runs silently
         SR, _, self.channels = pygame.mixer.get_init()
         pygame.mixer.set_num_channels(32)
+        # Keep channels 0-2 for the fuse, music and held layer, so ordinary sound effects never steal them.
         pygame.mixer.set_reserved(3)
         self.fuse_ch = pygame.mixer.Channel(0)
         self.music_ch = pygame.mixer.Channel(1)
@@ -255,6 +279,7 @@ class Audio:
         self.ok = True
 
     def _snd(self, samples, vol=0.9):
+        """Turn a list of floats into a playable pygame Sound: scale to full loudness, convert to 16-bit numbers, duplicate for stereo if needed."""
         peak = max(1e-6, max(abs(x) for x in samples))
         k = 32767 * vol / peak
         a = array.array("h", (int(x * k) for x in samples))
@@ -266,6 +291,7 @@ class Audio:
         return pygame.mixer.Sound(buffer=a.tobytes())
 
     def play(self, name, vol=1.0):
+        """Play one randomly chosen variant of the named sound, with slight random volume so repeats never sound identical."""
         if not self.ok or self.muted:
             return
         ch = random.choice(self.s[name]).play()
@@ -273,6 +299,7 @@ class Audio:
             ch.set_volume(min(1.0, vol * random.uniform(0.94, 1.06)))
 
     def fuse(self, on):
+        """Start or stop the looping bomb-fuse hiss."""
         if not self.ok:
             return
         if on and not self.muted and not self.fuse_ch.get_busy():
@@ -304,11 +331,13 @@ class Audio:
             self.loop(self.loop_name, False)
 
     def start_music(self):
+        """Begin the background music loop (fading in) if it is not already playing."""
         if self.ok and not self.muted and not self.music_ch.get_busy():
             self.music_ch.play(self.music_snd, loops=-1, fade_ms=1500)
             self.music_ch.set_volume(0.55)
 
     def toggle_mute(self):
+        """Switch all sound on or off."""
         self.muted = not self.muted
         if self.ok:
             if self.muted:

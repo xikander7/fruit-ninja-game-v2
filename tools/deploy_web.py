@@ -27,10 +27,13 @@ def rmtree(path):
 
 
 def run(*cmd, cwd=ROOT):
+    """Run a command (for example git) and return its output without the trailing newline; raises if it fails."""
     return subprocess.run(cmd, cwd=cwd, check=True, text=True, capture_output=True).stdout.strip()
 
 
 def build_site():
+    """Rebuild the assets and copy everything the website needs into build/site."""
+    # Always rebuild the assets first, so the site never ships stale files.
     subprocess.run([sys.executable, str(ROOT / "tools" / "build_web_js.py")], check=True, cwd=ROOT)
     if SITE.exists():
         rmtree(SITE)
@@ -46,18 +49,25 @@ def build_site():
 
 
 def push():
+    """Publish build/site as a fresh one-commit gh-pages branch on the origin remote."""
+    # The site folder gets its own throwaway git repo, so ask this repo where its origin remote points.
     url = run("git", "remote", "get-url", "origin")
+    # Commit author, copied from your git settings (a brand-new repo has none of its own).
     who = ("-c", f"user.name={run('git', 'config', 'user.name')}", "-c", f"user.email={run('git', 'config', 'user.email')}")
+    # Create a new repo in the site folder, commit everything, and force-push it as gh-pages.
+    # Force is safe because that branch only ever holds built files, never source code.
     for cmd in (("git", "init", "-q", "-b", "gh-pages"), ("git", "add", "-A"),
                 ("git", *who, "commit", "-q", "-m", "Publish the web edition"),
                 ("git", "push", "--force", url, "gh-pages")):
         run(*cmd, cwd=SITE)
+    # Remove the temporary repo so the next build starts clean.
     rmtree(SITE / ".git")
     print("pushed to gh-pages")
 
 
 if __name__ == "__main__":
     build_site()
+    # Without --push this is only a dry run, so it is safe to try.
     if "--push" in sys.argv:
         push()
     else:

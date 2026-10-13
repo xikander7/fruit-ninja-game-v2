@@ -18,22 +18,26 @@ from .fever import on_cut as fever_cut
 from .fx import glow, shade
 from .settings import W, H, GRAVITY
 
+# Boss tuning. HP = hits to defeat it. The boss moves through phases: RISE (comes up from below), HOVER (floats, can be hit), ESCAPE (flies off) - times in seconds.
 HP = 30
 RISE, HOVER, ESCAPE = 1.2, 8.0, 1.0  # s per phase
 COOLDOWN = 0.06  # s between hits
 DEATH = 1.4  # s for the split halves to fly clear
 CRACK_AT = (20, 10)  # hp at which each set of cracks opens
+# Which bosses appear (in turn), their on-screen titles, and a few per-boss look settings.
 NAMES = ("durian", "pineapple")
 TITLES = {"durian": "Durian", "pineapple": "Pineapple King"}
 FLESH = {"durian": (238, 206, 116), "pineapple": (255, 214, 86)}  # juice, chips, the glow inside the cracks
 CROWN = {"durian": 0.2, "pineapple": 0.42}  # share of the sprite height above the body (stem, leaves): no cracks there
 SPARK = (255, 228, 184)  # hard rind: hot, pale sparks, like steel on stone
+# Bonus points for the kill, then timings (seconds) for the little hit counter and the victory stamp.
 BONUS = 50
 TALLY_HOLD, TALLY_FADE = 0.6, 0.3  # s the hit counter stays after the last hit, then fades
 STAMP_DELAY = 0.25  # s after the kill: the 討 seal lands once the fruit burst has spread
 
 
 def ease_out(u):
+    """Turn 0-to-1 progress into a motion that starts fast and settles gently."""
     return 1 - (1 - u) ** 3
 
 
@@ -41,9 +45,11 @@ class BossHalf:
     """One side of the split boss: tumbling away under gravity, fading as it goes."""
 
     def __init__(self, img, x, y, vx, vy, spin):
+        """Start one half with its picture, position, velocity (vx, vy) and spin speed."""
         self.img, self.x, self.y, self.vx, self.vy, self.spin, self.ang = img, x, y, vx, vy, spin, 0.0
 
     def update(self, dt):
+        """Fall under gravity (a bit lighter than normal) while drifting sideways and spinning."""
         self.vy += GRAVITY * 0.85 * dt
         self.x += self.vx * dt
         self.y += self.vy * dt
@@ -51,7 +57,9 @@ class BossHalf:
 
 
 class Boss:
+    """The boss fruit: a state machine that moves through the phases "rise" -> "hover" -> "escape", or to "dead" if its HP runs out."""
     def __init__(self, art, name, x=None):
+        """Create a boss of kind `name`. It starts below the screen, ready to rise. `art` can be None (used by tests with no graphics)."""
         self.art, self.name = art, name
         self.title, self.flesh = TITLES[name], FLESH[name]
         self.hp, self.r = HP, BOSS_R
@@ -75,6 +83,7 @@ class Boss:
     # --- life ---
     @property
     def stage(self):
+        """How damaged it looks: 0 = whole, 1 or 2 = more cracks, based on how many CRACK_AT limits HP has dropped below."""
         return sum(self.hp <= h for h in CRACK_AT)
 
     def hit(self, now, dx=1.0, dy=0.0):
@@ -96,6 +105,7 @@ class Boss:
             self.phase, self.t, self.esc = "escape", 0.0, (self.x, self.y, self.ang)
 
     def update(self, dt):
+        """Advance the boss one frame: ease the health trail, then move it according to its current phase."""
         self.shown = max(float(self.hp), self.shown - dt * 6 * max(1.0, self.shown - self.hp))
         self.flash = max(0.0, self.flash - dt * 10)
         self.hit_age += dt
@@ -128,10 +138,12 @@ class Boss:
             self.ang, self.scale = ea - 10 * u * self.side, 1.0 - 0.08 * u
 
     def hover_pos(self, h):
+        """Where the boss floats `h` seconds into its hover: a slow sideways sway plus a small bob."""
         # 1 - cos: the bob and sway start from rest, so the rise flows into the hover without a kink
         return (self.x0 + self.side * 70 * (1 - math.cos(h * 0.8)), self.y0 + 16 * (1 - math.cos(h * 1.7)))
 
     def hover_ang(self, h):
+        """How much it tilts `h` seconds into its hover (a gentle rock back and forth)."""
         return 4.5 * math.sin(h * 1.1)
 
     # --- art ---
@@ -241,6 +253,7 @@ class Boss:
                                         sy * 340 - 300, side * random.uniform(90, 160)))
 
     def draw(self, L, add):
+        """Draw the boss with a hit recoil wobble, its shadow, crack glow and a white flash on impact. `L` is the world layer; `add` is the glow layer that brightens what it overlays."""
         if self.art is None:
             return
         if self.phase == "dead":
@@ -269,6 +282,7 @@ class Boss:
             add.blit(f, f.get_rect(center=pos.center), special_flags=pygame.BLEND_RGB_ADD)
 
     def draw_death(self, L, add):
+        """Draw the two halves flying apart and the bright slash of light across the fruit."""
         fade = max(0.0, min(1.0, (DEATH - self.dead_t) / 0.4))
         for h in self.halves:
             im = pygame.transform.rotate(h.img, h.ang)
@@ -290,6 +304,7 @@ class BossDirector:
     """First boss at `first_at` s of game time, the next `every` s after the previous one ends; Durian first."""
 
     def __init__(self, first_at=45.0, every=45.0):
+        """Schedule the first boss and the gap between bosses (both in seconds of game time)."""
         self.next_at, self.every = first_at, every
         self.active, self.leaving = None, None
         self.count = 0
@@ -297,9 +312,11 @@ class BossDirector:
 
     @property
     def pause_waves(self):
+        """True while a boss is up or the run is over, so normal fruit waves hold off."""
         return self.closed or self.active is not None
 
     def update(self, game_time, play):
+        """Called every frame: when the countdown is up and no boss is out, spawn the next one (alternating Durian and Pineapple King)."""
         if self.active is not None and self.active.done:
             self.active, self.next_at = None, game_time + self.every
         if self.closed or self.active is not None or game_time < self.next_at:
@@ -322,11 +339,13 @@ class BossDirector:
             self.leaving, self.active = self.active, None
 
     def draw(self, L, add):
+        """Draw whichever bosses are on stage."""
         for b in (self.leaving, self.active):
             if b is not None and not b.done:
                 b.draw(L, add)
 
 
+# These functions are called from the Play screen (game.py) so the boss code stays in this file.
 # ---------------- Play hooks ----------------
 
 def tick_boss(play, dt):
@@ -365,6 +384,7 @@ def slice_boss(play):
 
 
 def closest(seg, x, y):
+    """The point on line segment `seg` nearest to (x, y) - where the blade touched the boss."""
     ax, ay, bx, by = seg
     dx, dy = bx - ax, by - ay
     L2 = dx * dx + dy * dy or 1
@@ -373,6 +393,7 @@ def closest(seg, x, y):
 
 
 def strike(play, b, seg):
+    """Effects and score for one hit on the boss: sparks, flesh chips, screen shake, Fever chain and a sound."""
     w = play.w
     fever_cut(play)  # each hit grows the chain, like a cut
     pts = play.fever.points(1) if play.fever else 1
@@ -395,6 +416,7 @@ def strike(play, b, seg):
 
 
 def defeat(play, b):
+    """The boss has just died: big flash, shake and juice splash, bonus score, and queue the fruit burst and victory stamp."""
     w = play.w
     x, y, dx, dy = b.cut
     w.flash = max(w.flash, 0.6)

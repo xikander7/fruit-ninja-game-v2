@@ -1,4 +1,8 @@
 // Ninja Path hazards: the hooks Play calls and everything they draw (ninja/hazards.py). The rules are in rules/hazards.js.
+// Hazards are the extra dangers and tricks in Ninja Path: shurikens to parry, ice bombs that freeze
+// your blade, gravity-flip "chaos" fruit and a golden fruit that takes five hits.
+// This file holds the hooks Play calls (launch, hit, slice, tick) and the drawing code; counting
+// and timing live in rules/hazards.js.
 import { W, H, GOLD, STEEL, VIEW, viewLeft, viewRight } from "./config.js";
 import { uniform, choice, shade, rgb, rgba, TAU } from "./util.js";
 import { circle, line, drawSprite, addGlow } from "./gfx.js";
@@ -9,6 +13,7 @@ import {
   PARRY_SPEED, PARRY_POINTS, SHURIKEN_R,
 } from "./rules/hazards.js";
 
+// Creates one shuriken (a throwing star) aimed from (x, y) at the target (tx, ty).
 export function throwShuriken(play, x, y, tx, ty) {
   const s = new Shuriken(x, y, tx, ty);
   play.hz.shurikens.push(s);
@@ -32,6 +37,7 @@ export function launchHazard(play, kind) {
   return true;
 }
 
+// Sprays n gold beads in random directions at up to `speed` px/s.
 function coins(w, x, y, n, speed) { // gold beads with a bright glint: the coin sparks of a golden hit
   for (let i = 0; i < n; i++) {
     const a = uniform(0, TAU), sp = uniform(0.3, 1.0) * speed;
@@ -39,6 +45,7 @@ function coins(w, x, y, n, speed) { // gold beads with a bright glint: the coin 
   }
 }
 
+// Turns upside-down gravity on or off (w.gflip = -1 means things fall upward) with a punchy effect.
 export function flip(play, on) {
   const w = play.w, hz = play.hz;
   if (on) hz.flipT = FLIP_TIME;
@@ -53,6 +60,7 @@ export function flip(play, on) {
 /** Hazard rules for a hit body; true when the hit is fully handled here (Play.hit does nothing more). */
 export function onHit(play, b) {
   const w = play.w;
+  // Slicing an ice bomb freezes the blade for a moment instead of scoring.
   if (b.hazard === "ice") {
     b.alive = false;
     play.bladeFrozen = FREEZE_TIME;
@@ -70,6 +78,7 @@ export function onHit(play, b) {
     play.app.audio.play("explode", 0.45);
     return true;
   }
+  // The golden fruit takes GOLD_HITS hits; GOLD_GAP stops one swipe counting twice.
   if (b.kind === "golden") {
     const now = w.t;
     if (now - b.hitT < GOLD_GAP) return true; // the same swipe still crossing it
@@ -97,6 +106,7 @@ export function onHit(play, b) {
     play.app.audio.play("splat", 0.5);
     return true;
   }
+  // A chaos fruit flips gravity; returning false lets the normal slice scoring continue.
   if (b.kind === "chaos") flip(play, true);
   return false;
 }
@@ -130,16 +140,19 @@ export function sliceHazards(play) {
 /** Once a frame (not during hit-stop). Timers run on the game clock, so Time Stop holds them. */
 export function tickHazards(play, dt) {
   const hz = play.hz, w = play.w;
+  // gdt = "game time": powers like Time Stop scale it to 0 so the hazard timers pause too.
   const gdt = dt * w.powerScale;
   play.bladeFrozen = Math.max(0, play.bladeFrozen - gdt);
   if (hz.flipT > 0) {
     hz.flipT -= gdt;
     if (hz.flipT <= 0) { hz.flipT = 0; flip(play, false); }
   }
+  // Effect strengths (punch, red) fade out over time; the numbers are decay speeds per second.
   hz.punch = Math.max(0, hz.punch - dt * 2.2);
   hz.red = Math.max(0, hz.red - dt * 3.0);
   for (const r of hz.rings) r[2] += dt;
   hz.rings = hz.rings.filter((r) => r[2] < 0.3);
+  // mdt = "world time": slow-motion slows it, Time Stop holds it at 0.
   const mdt = dt * w.timeScale(); // world time: slow-mo slows it, Time Stop holds it
   const [mx, my] = play.app.mouse;
   for (const s of hz.shurikens) {
@@ -179,6 +192,7 @@ export function drawHazards(play, L, add) {
     if (!b.alive) continue;
     if (b.kind === "golden") { // a warm aura and a ring that tightens with every hit
       addGlow(add, b.r * 1.9, GOLD, 0.22 + 0.06 * Math.sin(t * 7), b.x, b.y);
+      // The golden ring shrinks as hp drops, hinting that it is nearly broken.
       const rr = b.r * (1.85 - 0.17 * (GOLD_HITS - b.hp));
       circle(add, b.x, b.y, rr, rgb(shade(GOLD, 0.8)), 2);
       circle(add, b.x, b.y, rr + 4, rgb(shade(GOLD, 0.3)), 1);
@@ -196,6 +210,7 @@ export function drawHazards(play, L, add) {
     drawSprite(L, art.shuriken, s.x, s.y, s.ang, 1);
     addGlow(add, 30, STEEL, 0.18, s.x, s.y); // a glint off the steel for the bloom
   }
+  // Parry ring: k goes 1 -> 0 over 0.3 s; the ring grows and thins as it fades.
   for (const [x, y, age] of play.hz.rings) { // the parry's metallic ring
     const k = 1 - age / 0.3;
     circle(add, x, y, 12 + 90 * (1 - k * k), rgb(shade([150, 170, 190], k)), Math.max(1, Math.trunc(3 * k)));
@@ -203,6 +218,7 @@ export function drawHazards(play, L, add) {
 }
 
 /** Over the world, under the HUD: frost while the blade is frozen, the chaos violet, a shuriken hit's red. */
+// "Grading" = tinting the whole screen. multiply darkens toward a colour; lighter adds light.
 export function drawHazardGrades(play, g, view) {
   const hz = play.hz;
   const full = () => g.fillRect(-VIEW.ox, -VIEW.oy, VIEW.w, VIEW.h);
@@ -214,6 +230,7 @@ export function drawHazardGrades(play, g, view) {
     g.drawImage(view.frost, -VIEW.ox, -VIEW.oy);
     g.globalAlpha = 1;
   }
+  // Violet tint: steady while gravity is flipped, plus a brief stronger pulse (punch squared) at each flip.
   const k = (hz.flipT > 0 ? 0.35 : 0.0) + 0.65 * hz.punch ** 2;
   if (k > 0) multiply([225, 205, 255].map((c) => Math.trunc(255 - (255 - c) * Math.min(1, k)))); // violet grade
   if (hz.red > 0) {

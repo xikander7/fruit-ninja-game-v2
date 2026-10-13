@@ -16,6 +16,7 @@ DT = 1 / 60
 
 
 def move(app, p):
+    """Move the mouse cursor to point p for one frame."""
     app.step(DT, [pygame.event.Event(pygame.MOUSEMOTION, pos=p, rel=(0, 0), buttons=(0, 0, 0))])
 
 
@@ -27,11 +28,14 @@ def swipe(app, a, b, steps=4):
 
 
 def run(app, frames):
+    """Advance the game the given number of frames with no input."""
     for _ in range(frames):
         app.step(DT, [])
 
 
 class HitMath(unittest.TestCase):
+    """The geometry used to decide whether a blade stroke touches a fruit."""
+    # Proves: a line segment hits a circle when it passes through it, misses when it doesn't, and handles zero-length and too-short segments.
     def test_segment_circle(self):
         self.assertTrue(seg_hits_circle(0, 0, 10, 0, 5, 3, 4))
         self.assertFalse(seg_hits_circle(0, 0, 10, 0, 5, 5, 4))
@@ -40,15 +44,19 @@ class HitMath(unittest.TestCase):
 
 
 class CursorOnly(unittest.TestCase):
+    """The blade is just the moving cursor: fast flicks cut, slow drifts and window re-entry don't."""
     def setUp(self):
+        """Use a throwaway save file and start the game at the menu."""
         self.tmp = tempfile.TemporaryDirectory()
         game.SAVE_PATH = Path(self.tmp.name) / "save.json"
         self.app = game.App()
 
     def tearDown(self):
+        """Shut pygame down and delete the temporary save folder."""
         pygame.quit()
         self.tmp.cleanup()
 
+    # Proves: slow movement and big cursor jumps are ignored, while a fast flick cuts the menu fruit without any click.
     def test_slow_drift_and_teleport_do_not_cut(self):
         app = self.app
         b = app.scene.buttons[0]
@@ -64,16 +72,20 @@ class CursorOnly(unittest.TestCase):
 
 
 class FullRun(unittest.TestCase):
+    """A scripted play-through: menu, classic game, game over, retry, plus the arcade mode and the save file."""
     def setUp(self):
+        """Use a throwaway save file and start the game at the menu."""
         self.tmp = tempfile.TemporaryDirectory()
         game.SAVE_PATH = Path(self.tmp.name) / "save.json"
         self.app = game.App()
 
     def tearDown(self):
+        """Shut pygame down and delete the temporary save folder."""
         pygame.quit()
         self.tmp.cleanup()
 
     def slice_all(self, scene, kinds=None):
+        """Swipe through every living body on screen (optionally only certain kinds) and return how many were swiped."""
         n = 0
         for b in list(scene.w.bodies):
             if b.alive and (kinds is None or b.kind in kinds) and 0 < b.y < 720:
@@ -81,6 +93,7 @@ class FullRun(unittest.TestCase):
                 n += 1
         return n
 
+    # Proves: you can start classic by slicing the menu fruit, score, hit a bomb, reach game over with a saved best score, and retry.
     def test_classic_to_gameover_and_retry(self):
         app = self.app
         run(app, 10)
@@ -108,6 +121,7 @@ class FullRun(unittest.TestCase):
         run(app, 60)
         self.assertIsInstance(app.scene, game.Play)
 
+    # Proves: arcade's special fruit give their bonuses, and the game ends when time runs out.
     def test_arcade_specials_and_timeout(self):
         app = self.app
         app.go(lambda: game.Play(app, "arcade"))
@@ -122,6 +136,7 @@ class FullRun(unittest.TestCase):
         run(app, 200)
         self.assertIsInstance(app.scene, game.GameOver)
 
+    # Proves: a broken save file doesn't crash the game; it just starts with default scores.
     def test_corrupt_save_is_ignored(self):
         game.SAVE_PATH.write_text("{not json", encoding="utf-8")
         self.assertEqual(game.load_save()["best"]["classic"], 0)

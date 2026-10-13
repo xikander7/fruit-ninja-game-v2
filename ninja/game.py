@@ -1,3 +1,9 @@
+"""The heart of the desktop game: saving, the screens and the main loop.
+
+World draws the dojo background, Menu / Play / GameOver are the screens you move between,
+Wipe is the cut-in-two transition, and App owns the window and runs the frame loop.
+load_save / write_save keep your best scores in a small JSON file in your home folder.
+"""
 import json
 import math
 import os
@@ -17,6 +23,7 @@ from .title import TitleIntro
 from .fx import Particles, Stains, Trail, Shake, Popups, Stamp, ray_burst, glow, shade, blurred
 from .settings import CAPTION, W, H, FPS, GRAVITY, SAVE_PATH, WASHI, GOLD, HANKO, MUTED, LACQUER, BLADES, MODES, MODE_FEATURES
 
+# Blade input tuning. The mouse is the blade: a cursor moving faster than SLICE_SPEED slices, a slow drift does not.
 SLICE_SPEED = 300  # px/s: just moving the cursor slices; a slow drift doesn't
 MAX_JUMP = 350  # px in one motion event
 # The UI layer is cleared to alpha 1, not 0. pygame blends onto a pixel with any alpha as dst + (src - dst) * a, which
@@ -28,6 +35,7 @@ UI_CLEAR = (0, 0, 0, 1)
 # ---------------- save data ----------------
 
 def load_save():
+    """Read the player's saved progress (best scores, chosen blade, mute setting) from disk. Anything missing or corrupt falls back to defaults, so a bad file never stops the game."""
     data = {"best": {m: 0 for m in MODES}, "blade": "Moonlight", "muted": False, "total_sliced": 0}
     try:
         raw = json.loads(SAVE_PATH.read_text(encoding="utf-8"))
@@ -56,12 +64,18 @@ def write_save(data):
 # ---------------- world: everything that lives on the dojo wall ----------------
 
 class World:
+    """Everything that lives on the dojo wall: flying fruit and bombs, cut halves, particles, stains, popups, stamps and the camera effects (shake, zoom, slow-mo, shockwaves).
+    Both the menu and the game own one World.
+    """
+    # "Heat" counts recent cuts; when a lot happen at once (a power or fruit rain), each cut gets lighter effects (LOD = level of detail) so the game stays smooth.
+    # MAX_HALVES caps how many cut halves exist at once.
     HEAT_TAU, HEAT_LOD, MAX_HALVES = 0.5, 6.0, 28  # cut-effect LOD: a storm of cuts gets lighter juice per cut
     PUNCH = 0.25  # s for a combo zoom punch to ease back
     SLOW_HOLD, SLOW_EASE = 0.4, 0.15  # slow-mo: held at full strength, then eased back to real time
     SHOCK = 0.6  # s for a bomb shockwave to cross the screen
 
     def __init__(self, app, bg=None):
+        """Create an empty world: no fruit, fresh effect systems, and a few specks of dust already floating in the lamplight."""
         self.app, self.art = app, app.art
         self.bg = bg or self.art.bg
         self.bodies, self.halves = [], []
@@ -87,11 +101,15 @@ class World:
             self.particles.mote()
 
     def throw(self, kind, x, y, vx, vy, static=False):
+        """Add a new fruit or bomb of the given kind at (x, y) moving at (vx, vy) pixels per second, and return it."""
         b = Body(self.art, kind, x, y, vx, vy, static)
         self.bodies.append(b)
         return b
 
     def cut(self, b, ax, ay, bx, by):
+        """Slice body `b` with a blade stroke from (ax, ay) to (bx, by): spawn two halves that fly apart sideways, plus juice, a stain and a sound.
+        The maths: (dx, dy) is the stroke direction, and (nx, ny) is perpendicular to it, which is the way the halves separate.
+        """
         b.alive = False
         dx, dy = bx - ax, by - ay
         L = math.hypot(dx, dy) or 1
@@ -115,6 +133,7 @@ class World:
         self.app.audio.play("splat", 0.8)
 
     def explode(self, b):
+        """Blow up a bomb with a flash, shockwave, sparks, smoke, shards and a big screen shake."""
         b.alive = False
         self.rings.append([b.x, b.y, 0.0])
         self.shocks.append([b.x, b.y, 0.0])
@@ -129,9 +148,11 @@ class World:
         self.app.audio.play("explode")
 
     def zoom_punch(self, zoom):
+        """Briefly zoom the camera in to `zoom` (e.g. 1.02 = 2%), which then eases back by itself."""
         self.punch = [zoom, 0.0]
 
     def slow(self):
+        """Start a short slow-motion moment."""
         self.slowmo = self.SLOW_HOLD + self.SLOW_EASE
 
     def slow_k(self):
@@ -144,12 +165,15 @@ class World:
         return u * u * (3 - 2 * u)
 
     def time_scale(self):
+        """How fast the world's time runs right now: 1 normal, down to 0.3 in slow-mo, 0 while Time Stop holds everything."""
         return (1.0 - 0.7 * self.slow_k()) * self.power_scale  # 0.3 at full slow-mo
 
     def stamp(self, glyph, caption, x, y, size=120, color=WASHI, bonus=None, hold=False):
+        """Slam a red seal (a kanji character with a caption) onto the screen, e.g. "Fever"."""
         self.stamps.append(Stamp(self.art, glyph, caption, x, y, size, color, bonus, hold))
 
     def update(self, dt, real_dt):
+        """Advance the world one frame. `real_dt` is true elapsed time (camera effects use it); `dt` is game time, which can be slowed, frozen or stopped by hit-stop."""
         # camera/post effects run on real time so they play out even through hit-stop and slow-mo
         self.t += real_dt
         self.shake.update(real_dt)
@@ -196,6 +220,9 @@ class World:
             self.particles.lantern_ember()
 
     def draw(self, screen, extra=None):
+        """Draw the world in layers: wall, stains, shadows, halves, whole fruit, `extra` (scene-specific drawing), particles, slash flashes and shockwave rings.
+        Glowing things go on `app.add`, a separate layer that gets added on top (and bloomed on the GPU).
+        """
         add = self.app.add  # cleared once per frame by App
         L = self.layer
         L.blit(self.bg, (0, 0))
@@ -242,6 +269,7 @@ class World:
         screen.blit(L, (rox, roy))
 
     def draw_overlay(self, screen):
+        """Draw stamps and popups on the UI layer, above all post-processing."""
         ui = self.app.ui  # stamps and popups are UI: they sit above the post-processing, never warped or graded
         for s in self.stamps:
             s.draw(ui)
@@ -268,6 +296,7 @@ class SliceButton:
     """A fruit you cut to choose. Menus in this dojo have no buttons."""
 
     def __init__(self, world, kind, x, y, glyph, title, sub="", sub2="", ring=80):
+        """Create a fruit that hangs in place and acts as a menu choice when you slice it."""
         self.world, self.kind = world, kind
         self.x, self.y = x, y
         self.glyph, self.title, self.sub, self.sub2 = glyph, title, sub, sub2
@@ -278,6 +307,7 @@ class SliceButton:
         self.hover = 0.0
 
     def update(self, dt, segments, mouse=None):
+        """Bob the fruit gently, glow when the cursor is near, and return True if a blade stroke just cut it."""
         self.t += dt
         near = mouse is not None and math.dist(mouse, (self.x, self.y)) < self.ring + 20
         self.hover = min(1.0, self.hover + dt * 6) if near else max(0.0, self.hover - dt * 4)
@@ -300,6 +330,7 @@ class SliceButton:
         self.cut_at = self.t
 
     def draw(self, surf):
+        """Draw the ring, seal and text labels around the fruit."""
         f = self.world.art.fonts
         R = self.ring
         ring = hairline_ring(R)
@@ -323,28 +354,36 @@ class SliceButton:
 
 
 class Scene:
+    """Base class for a screen of the game (menu, play, game over). Each screen overrides the methods it needs; these defaults do nothing."""
     def handle(self, e):
+        """Respond to one input event (key press, click...)."""
         pass
 
     def update(self, dt):
+        """Advance this screen by `dt` seconds."""
         pass
 
     def draw(self, screen):
+        """Draw this screen."""
         pass
 
     def focus_lost(self):
+        """Called when the window loses focus (a good moment to pause)."""
         pass
 
     def fx_params(self):
+        """Settings for the GPU screen effects; empty means a plain, unmodified picture."""
         return {}  # neutral post-processing
 
 
 # ---------------- menu ----------------
 
 class Menu(Scene):
+    """The title screen: four fruit to slice to pick a game mode, plus the blade picker."""
     SETTLE = 1.2  # s for the background to drift from 1.04x to rest
 
     def __init__(self, app):
+        """Build the world, the four mode fruit and the title intro. The background is made slightly oversize so it can drift without showing an edge."""
         self.app = app
         self.w = World(app)
         best = app.save["best"]
@@ -368,6 +407,7 @@ class Menu(Scene):
 
     @property
     def intro_done(self):
+        """True once the title animation has finished."""
         return self.intro.done
 
     def set_bg(self):
@@ -384,10 +424,12 @@ class Menu(Scene):
         self.w.bg = big.subsurface((x, y, W, H))
 
     def unlocked(self):
+        """Names of the blades unlocked by the player's best score in any mode."""
         top = max(self.app.save["best"].values())
         return [n for n, b in BLADES.items() if top >= b[3]]
 
     def cycle_blade(self, step):
+        """Switch to the next (+1) or previous (-1) unlocked blade, skipping locked ones, and save the choice."""
         names = list(BLADES)
         i = names.index(self.app.save["blade"])
         for _ in range(len(names)):
@@ -399,6 +441,7 @@ class Menu(Scene):
         self.app.audio.play("swoosh", 0.6)
 
     def handle(self, e):
+        """Menu input: number keys pick a mode, arrows or mouse wheel change blade, Esc quits."""
         if e.type == pygame.KEYDOWN:
             self.intro.skip()  # any key skips the intro (and still does what it does)
             if e.key == pygame.K_ESCAPE:
@@ -419,6 +462,7 @@ class Menu(Scene):
                     self.cycle_blade(step)
 
     def update(self, dt):
+        """Animate the parallax background, run the intro, and watch for a mode fruit being cut; a short delay later the chosen game starts."""
         self.t += dt
         mx, my = self.app.mouse
         tx, ty = -(mx / W - 0.5) * 20, -(my / H - 0.5) * 20  # +-10 px, against the cursor like a deeper layer
@@ -441,9 +485,11 @@ class Menu(Scene):
                 self.app.go(lambda: Play(self.app, mode))
 
     def fx_params(self):
+        """Pass the world's screen effects through to the GPU."""
         return self.w.fx_params()
 
     def draw(self, screen):
+        """Draw the world with the title intro, then the buttons, blade picker and help text on the UI layer."""
         f = self.app.art.fonts
         ui = self.app.ui
         self.w.draw(screen, self.intro.draw_world)
@@ -483,7 +529,9 @@ class Menu(Scene):
 # ---------------- play ----------------
 
 class Play(Scene):
+    """The game itself: spawning waves of fruit, slicing, scoring, combos, lives, timers and all the mode-specific rules."""
     def __init__(self, app, mode):
+        """Set up a fresh run for `mode`, turning on only the systems that mode uses (powers, fever, boss, hazards)."""
         self.app, self.mode = app, mode
         self.features = MODE_FEATURES[mode]
         self.ki, self.power, self.last_power = KiMeter() if "powers" in self.features else None, None, "timestop"
@@ -518,6 +566,7 @@ class Play(Scene):
 
     # --- spawning ---
     def launch(self, kind, x=None):
+        """Throw one fruit or bomb up from below the screen. The physics picks an upward speed so it peaks at a random height: from v^2 = 2*g*height, so vy = -sqrt(2*g*h)."""
         if launch_hazard(self, kind, x):  # a shuriken flies on its own
             return
         r = 38 if kind in ("bomb", "icebomb") else FRUITS[kind].r
@@ -531,6 +580,7 @@ class Play(Scene):
         self.app.audio.play("throw", 0.5)
 
     def wave(self):
+        """Plan the next group of items: how many, which kinds (with some chance of bombs and hazards) and a launch pattern. They go into a queue with delays."""
         e = self.elapsed
         hi = min(6, 1 + int(e / 12) + (1 if self.mode != "classic" else 0))
         n = random.randint(1, hi)
@@ -554,12 +604,14 @@ class Play(Scene):
             self.queue.append([delay, k, x])
 
     def interval(self):
+        """Seconds to wait before the next wave. It gets shorter as the run goes on, so the game speeds up, down to a per-mode minimum."""
         e = self.elapsed
         return {"classic": max(0.85, 2.2 - e * 0.016), "arcade": max(0.6, 1.4 - e * 0.012), "zen": max(0.9, 1.7 - e * 0.008),
                 "path": max(0.75, 2.0 - e * 0.014)}[self.mode]
 
     # --- scoring ---
     def add_score(self, n):
+        """Add points. Reaching each score milestone gives back a lost life in classic and path modes."""
         self.score += n
         if self.mode in ("classic", "path"):
             while self.score >= self.next_life:
@@ -570,6 +622,7 @@ class Play(Scene):
                     self.app.audio.play("life")
 
     def hit(self, b, seg):
+        """The blade just touched body `b` along stroke `seg`: handle hazards, bombs, then scoring, combo counting and power-up fruit."""
         w = self.w
         if hazard_hit(self, b, seg):  # ice bomb, and the golden fruit's first hits
             return
@@ -616,6 +669,7 @@ class Play(Scene):
             self.app.audio.play("power")
 
     def slice(self):
+        """Check every blade stroke this frame against every fruit and boss."""
         if slice_hazards(self):  # parries shurikens; True while an ice bomb has frozen the blade
             return
         slice_boss(self)  # the boss is never in w.bodies (no power targets it); its own hits, here
@@ -627,6 +681,7 @@ class Play(Scene):
                         return
 
     def finish_combo(self):
+        """The quick run of cuts has ended: award a bonus if it was 3 or more fruit and show a combo stamp."""
         if self.combo >= 3:
             bonus = self.combo * (2 if self.double > 0 else 1)
             bonus = self.fever.points(bonus) if self.fever else bonus
@@ -645,6 +700,7 @@ class Play(Scene):
         return 3 - self.strikes if self.mode == "path" else None
 
     def strike(self, b):
+        """A fruit was dropped without being cut: count the miss and, in some modes, lose a life."""
         self.stats["missed"] += 1
         if self.fever and not self.fever.active:  # a drop breaks the chain, but never a running Fever
             self.fever.reset()
@@ -667,6 +723,7 @@ class Play(Scene):
 
     # --- loop ---
     def handle(self, e):
+        """Play input: Esc or P pauses, Q (while paused) quits to the menu, Q/W/E or right-click use a power."""
         if e.type == pygame.KEYDOWN:
             if e.key in (pygame.K_ESCAPE, pygame.K_p):
                 self.paused = not self.paused
@@ -684,10 +741,12 @@ class Play(Scene):
     throw_shuriken = throw_shuriken
 
     def focus_lost(self):
+        """Pause automatically if the player switches to another window mid-run."""
         if self.state == "play":
             self.paused = True
 
     def fx_params(self):
+        """Screen-effect settings for this frame, tweaked by freeze, powers and Fever. Plain while paused."""
         if self.paused:
             return {}
         p = self.w.fx_params()
@@ -699,6 +758,7 @@ class Play(Scene):
         return p
 
     def update(self, dt):
+        """The main game tick. Order matters: timers and powers first, then the state machine (ready -> play -> dying/ending -> over), spawning, slicing, then cleanup of fruit that fell."""
         if self.paused:
             self.app.audio.quiet()
             return
@@ -782,6 +842,7 @@ class Play(Scene):
             self.end()
 
     def end(self):
+        """The run is over: save the best score, then wipe to the game-over screen."""
         self.state = "over"
         if self.combo:
             self.finish_combo()
@@ -794,6 +855,7 @@ class Play(Scene):
         self.app.go(lambda: GameOver(self.app, self, snap))
 
     def draw_world_extra(self, L, add):
+        """Mode-specific things drawn inside the world layer: red miss marks, the boss, hazards and the running power."""
         for x, age in self.misses:  # a red brush mark where the fruit fell
             k = min(1.0, age / 0.12)
             a = int(255 * min(1.0, (1.2 - age) / 0.4))
@@ -808,6 +870,7 @@ class Play(Scene):
             self.power.draw(L, add, self.app.ui)
 
     def draw_pause(self, screen):
+        """Draw the frosted "Paused" screen."""
         f = self.app.art.fonts
         ui = self.app.ui
         if self.pause_bg is None:  # the world is frozen: blur it (with its HUD) once, not every frame
@@ -826,6 +889,7 @@ class Play(Scene):
         label(ui, f, f.mono15, "Click or Esc to resume  ·  Q to quit to menu", MUTED, (W / 2, H / 2 + 58))
 
     def draw(self, screen):
+        """Draw the world, colour grades, HUD and any popups; or the pause screen if paused."""
         w = self.w
         if self.paused and self.pause_bg is not None:
             self.draw_pause(screen)
@@ -841,9 +905,11 @@ class Play(Scene):
 # ---------------- game over ----------------
 
 class GameOver(Scene):
+    """The results screen: final score counting up, stats, and two fruit to slice for Retry or Menu."""
     COUNT_AT, COUNT = 0.45, 1.3  # the score counts up once the 終 seal has landed
 
     def __init__(self, app, play, snap):
+        """Show the finished run over a blurred snapshot of the last frame."""
         self.app, self.play = app, play
         self.w = World(app, blurred(snap, (100, 92, 88)))
         self.t = 0.0
@@ -855,6 +921,7 @@ class GameOver(Scene):
         self.shown = 0.0
 
     def handle(self, e):
+        """Keyboard shortcuts: Enter/R/Space to retry, Esc for the menu."""
         if e.type == pygame.KEYDOWN and not self.choice:
             if e.key in (pygame.K_RETURN, pygame.K_r, pygame.K_SPACE):
                 self.retry.cut()  # the same answer a swipe gets: the fruit splits and its seal lands
@@ -864,9 +931,11 @@ class GameOver(Scene):
                 self.choose("menu")
 
     def choose(self, c):
+        """Remember the player's choice; the update loop acts on it after a short delay."""
         self.choice, self.choice_t = c, 0.0
 
     def update(self, dt):
+        """Run the timeline: score count-up, seal stamps, then watch for a choice and switch screens."""
         self.t += dt
         self.w.update(dt, dt)
         u = min(1.0, max(0.0, (self.t - self.COUNT_AT) / self.COUNT))
@@ -893,9 +962,11 @@ class GameOver(Scene):
                 self.app.go((lambda: Play(self.app, mode)) if c == "retry" else (lambda: Menu(self.app)))
 
     def fx_params(self):
+        """Pass the world's screen effects through to the GPU."""
         return self.w.fx_params()
 
     def draw(self, screen):
+        """Draw the score, best, stats row and buttons."""
         f = self.app.art.fonts
         self.w.draw(screen)
         ui = self.app.ui  # everything over the blurred wall is UI
@@ -928,9 +999,11 @@ class GameOver(Scene):
 # ---------------- transition: the screen is cut in two ----------------
 
 class Wipe:
+    """The screen transition: the old picture is cut in two along a slanted line and the halves slide apart, revealing the new screen."""
     DUR = 0.5
 
     def __init__(self, snap):
+        """Split the old picture `snap` into two cut-out pieces along a slanted line."""
         xt, xb = W * 0.62, W * 0.38
         self.pieces, self.polys = [], []
         for poly in ([(0, 0), (xt, 0), (xb, H), (0, H)], [(xt, 0), (W, 0), (W, H), (xb, H)]):
@@ -946,10 +1019,12 @@ class Wipe:
         self.t = 0.0
 
     def update(self, dt):
+        """Advance the transition; returns False when it is finished."""
         self.t += dt
         return self.t < self.DUR
 
     def draw(self, screen, add=None, cpu=True, ui=None):
+        """Slide the two pieces apart and glow along the cut edge. `add` and `ui` are the glow and HUD layers of the new scene, hidden wherever the old picture still covers them."""
         k = min(1.0, self.t / self.DUR)
         e = 1 - (1 - k) ** 3
         d = e * W * 0.8
@@ -980,7 +1055,9 @@ class Wipe:
 # ---------------- app ----------------
 
 class App:
+    """The whole program: owns the window, the input state, the current screen (Menu / Play / GameOver) and the main loop."""
     def __init__(self):
+        """Start pygame and show a loading message, then load art, sound and the save, and open the menu."""
         pygame.init()
         self.fullscreen = False
         self.open_window()
@@ -1037,6 +1114,7 @@ class App:
         return to_logical(pos, pygame.display.get_window_size())
 
     def present(self, params):
+        """Show the finished frame: run the GPU effects if available, then flip the screen buffers."""
         if self.gpu:
             self.gpu.render(self.frame, self.add, params, (0, 0, *pygame.display.get_window_size()), ui=self.ui)
         pygame.display.flip()
@@ -1051,6 +1129,7 @@ class App:
         return snap
 
     def go(self, make_scene):
+        """Switch to a new screen (built by calling `make_scene`) with the cut-in-two transition from the last picture."""
         snap = self.snapshot()
         self.scene = make_scene()
         self.wipe = Wipe(snap)
@@ -1063,12 +1142,15 @@ class App:
         self.present(self.scene.fx_params())
 
     def run(self):
+        """The desktop main loop: step frames until the player quits."""
         while self.running:
             self.frame_step()
         pygame.quit()
 
     def step(self, dt, events):
+        """Advance everything one frame: handle input events, turn mouse movement into blade strokes, update and draw the current screen."""
         self.now += dt
+        # Mouse movement this frame becomes a list of points; each pair of neighbouring points is a blade segment tested against the fruit.
         pts = [self.mouse]
         for e in events:
             if self.gpu and e.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
@@ -1101,6 +1183,7 @@ class App:
                 self.scene.focus_lost()
             if e.type != pygame.QUIT:
                 self.scene.handle(e)
+        # Blade speed = distance travelled / time. Only fast motion counts as a slice (above SLICE_SPEED).
         self.segments = []
         self.speed = 0.0
         if len(pts) >= 2 and dt > 0:
@@ -1123,6 +1206,7 @@ class App:
                 vx, vy = -(bx - ax) / L, -(by - ay) / L
                 w.particles.add(bx, by, (vx - vy * j) * sp, (vy + vx * j) * sp, random.uniform(0.15, 0.28),
                                 random.uniform(1, 1.8), col, "spark", 0.6)
+        # Frame order: update the screen, clear the glow and UI layers, draw the screen, then the transition and the blade on top.
         self.scene.update(dt)
         self.add.fill((0, 0, 0))
         self.ui.fill(UI_CLEAR)
@@ -1136,6 +1220,7 @@ class App:
         self.draw_blade()
 
     def draw_blade(self):
+        """Draw the glowing blade trail and the cursor on the glow layer."""
         colors = blade_colors(self.scene) or BLADES[self.save["blade"]][:3]
         xs = [p[0] for p in self.trail.pts if p] + [self.mouse[0]]
         ys = [p[1] for p in self.trail.pts if p] + [self.mouse[1]]
