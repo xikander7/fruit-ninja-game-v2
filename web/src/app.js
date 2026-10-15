@@ -60,11 +60,7 @@ export class App {
     this.pointerActive = !touch; // a mouse is always there; a finger only while it touches
     this.events = [];
     this.wipe = null;
-    // Chrome on Android can draw the layered picture blank when its graphics path misbehaves (Brave on the same phone
-    // does not). Software-drawn layers sidestep that, so Chrome on Android uses them; ?cpu forces them, ?gpu opts out.
-    const ua = navigator.userAgent;
-    const chromeAndroid = touch && /Android/.test(ua) && /Chrome\//.test(ua) && !navigator.brave && !/SamsungBrowser|EdgA|OPR|Firefox/.test(ua);
-    this.cpu = /[?&]cpu/.test(location.search) || (chromeAndroid && !/[?&]gpu/.test(location.search));
+    this.cpu = /[?&]cpu/.test(location.search); // ?cpu forces software-drawn layers (also used as a fallback)
     this.quality = 2; // 2 full bloom, 1 light bloom, 0 none: stepped down if frames run long
     this.avgDt = 1 / 60; this.slowFrames = 0;
     this.bloomOn = true;
@@ -127,7 +123,7 @@ export class App {
     const scale = Math.min(cw / vw, ch / vh);
     const dw = Math.floor(vw * scale), dh = Math.floor(vh * scale);
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const RS = Math.max(1, Math.min(this.touch ? 1.5 : MAX_RS, Math.round(((dw * dpr) / vw) * 4) / 4));
+    const RS = Math.max(0.5, Math.min(this.rsCap ?? (this.touch ? 1.5 : MAX_RS), Math.round(((dw * dpr) / vw) * 4) / 4));
     VIEW.w = vw; VIEW.h = vh; VIEW.ox = (vw - W) / 2; VIEW.oy = (vh - H) / 2;
     gfx.RS = RS;
     this.RS = RS;
@@ -218,9 +214,9 @@ export class App {
       el.style.cssText = "position:fixed;left:4px;top:4px;z-index:99;margin:0;padding:6px;background:#000c;color:#7f7;font:11px/1.3 monospace;max-width:60vw;white-space:pre-wrap;pointer-events:none";
       document.body.appendChild(el);
     }
-    el.textContent = [`build 2026-10-15b  dpr ${window.devicePixelRatio}  touch ${this.touch}`,
+    el.textContent = [`build 2026-10-15c  dpr ${window.devicePixelRatio}  touch ${this.touch}`,
       `view ${window.innerWidth}x${window.innerHeight}  canvas ${this.canvas.width}x${this.canvas.height}  RS ${this.RS}`,
-      `quality ${this.quality}  cpu ${!!this.cpu}  safe ${!!this.safe}  recoveries ${this._recoveries || 0}`,
+      `fps ${Math.round(1 / Math.max(this.avgDt, 0.001))}  quality ${this.quality}  rsCap ${this.rsCap ?? "-"}  cpu ${!!this.cpu}  safe ${!!this.safe}  recoveries ${this._recoveries || 0}`,
       this.probeInfo, `error: ${this.lastError || "none"}`].join("\n");
   }
 
@@ -264,7 +260,7 @@ export class App {
 
   /** One frame: input, update, draw, present. `realDt` is the time since the last frame, in seconds. */
   frameStep(realDt) {
-    const dt = Math.min(realDt, 1 / 20);
+    const dt = Math.min(realDt, 1 / 15);
     this.adapt(realDt);
     try {
       this.checkHealth(realDt);
@@ -278,12 +274,20 @@ export class App {
 
   /** If frames keep running long, step the glow down a level: a steady frame rate beats a prettier slideshow. */
   adapt(realDt) {
-    this.avgDt += (Math.min(realDt, 0.1) - this.avgDt) * 0.05;
-    this.slowFrames = this.avgDt > 0.026 ? this.slowFrames + 1 : 0;
-    if (this.slowFrames > 90 && this.quality > 0) {
-      this.quality -= 1; this.slowFrames = 0; this.avgDt = 1 / 60;
+    this.avgDt += (Math.min(realDt, 0.5) - this.avgDt) * 0.1;
+    // Frames that take over ~35 ms for most of a second: make the picture cheaper, one step at a time. A phone that
+    // draws at 2 frames a second makes the whole game crawl, so this reacts fast and never steps back up.
+    this.slowT = this.avgDt > 0.035 ? (this.slowT || 0) + realDt : 0;
+    if (this.slowT < 0.8) return;
+    this.slowT = 0; this.avgDt = 1 / 60;
+    if (this.quality > 0) {
+      this.quality -= 1;
       const w = this.scene && this.scene.w;
       if (w) w.particles.CAP = Math.min(w.particles.CAP, this.quality ? 700 : 350);
+    } else if ((this.rsCap ?? (this.touch ? 1.5 : MAX_RS)) > 0.75) {
+      this.rsCap = (this.rsCap ?? (this.touch ? 1.5 : MAX_RS)) > 1 ? 1 : 0.75; // fewer pixels to fill
+      this._layers = null;
+      this.resize();
     }
   }
 
