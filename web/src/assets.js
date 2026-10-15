@@ -409,6 +409,7 @@ export class Art {
       };
     }
     // bombTip finds where the fuse comes out of the bomb sprite, so the spark can sit there.
+    this._banana = halves.banana;
     this.bomb = sprites.bomb; this.bombTip = bombTip(sprites.bomb); this.bombShadow = makeShadow(sprites.bomb);
     this.icebomb = sprites.icebomb; this.icebombShadow = makeShadow(sprites.icebomb);
     this.shuriken = sprites.shuriken; this.shurikenShadow = makeShadow(sprites.shuriken);
@@ -416,6 +417,18 @@ export class Art {
     this.splashes = splashImgs.map((im, i) => ({ img: im, dir: SPLASHES[i][1], glint: null }));
     this.splashDirs = SPLASHES.map(([, d]) => d);
     onProgress(total, total);
+  }
+
+  /** Drop every cached derived picture and rebuild the fruit shadows, so a phone that lost canvas contents recovers. */
+  rebuild() {
+    this._seals.clear(); this._blots.clear(); this._splash.clear(); this._views.clear();
+    for (const f of Object.values(this.fruits)) {
+      f.shadow = makeShadow(f.whole); f.halfShadow = makeShadow(f.half);
+      if (f.ft.special && this._banana) f.half = tinted(this._banana, 1, f.ft.juice);
+    }
+    this.bombShadow = makeShadow(this.bomb); this.icebombShadow = makeShadow(this.icebomb);
+    this.shurikenShadow = makeShadow(this.shuriken);
+    this.fonts._cache.clear();
   }
 
   /** Splash sprite i tinted to a juice colour at SPLASH_SCALE of its size, cached; rotation is done when drawn. */

@@ -131,18 +131,69 @@ export class App {
     this.canvas.style.width = `${dw}px`; this.canvas.style.height = `${dh}px`;
     this.canvas.classList.toggle("turned", this.turned);
     this.disp = [dw, dh];
-    const layer = (w, h) => { const c = makeCanvas(w, h); return [c, getCtx(c)]; };
-    [this.Lc, this.L] = layer(vw, vh);
-    [this.addc, this.add] = layer(vw, vh);
-    [this.uic, this.ui] = layer(px, py);
-    [this.bladec, this.blade] = layer(px, py);
-    this.bloomc = [2, 4, 8, 16].map((k) => layer(Math.ceil(vw / k), Math.ceil(vh / k)));
+    // Phones fire many resize events while the address bar and fullscreen settle. Making a fresh set of big canvases
+    // each time can exhaust the phone's graphics memory and leave the world layers blank (a black screen), so
+    // layers are only rebuilt when their size really changed, and the old ones are released at once.
+    const layer = (w, h, old) => {
+      w = Math.max(1, Math.round(w)); h = Math.max(1, Math.round(h));
+      if (old && old[0].width === w && old[0].height === h) return old;
+      if (old) { old[0].width = 0; old[0].height = 0; }
+      const c = makeCanvas(w, h);
+      return [c, getCtx(c)];
+    };
+    const old = this._layers || {};
+    this._layers = {
+      L: layer(vw, vh, old.L), add: layer(vw, vh, old.add), ui: layer(px, py, old.ui), blade: layer(px, py, old.blade),
+      bloom: [2, 4, 8, 16].map((k, i) => layer(Math.ceil(vw / k), Math.ceil(vh / k), old.bloom && old.bloom[i])),
+    };
+    const Ls = this._layers;
+    [this.Lc, this.L] = Ls.L; [this.addc, this.add] = Ls.add; [this.uic, this.ui] = Ls.ui; [this.bladec, this.blade] = Ls.blade;
+    this.bloomc = Ls.bloom;
     this.L.setTransform(1, 0, 0, 1, VIEW.ox, VIEW.oy);
     this.add.setTransform(1, 0, 0, 1, VIEW.ox, VIEW.oy);
     this.ui.setTransform(RS, 0, 0, RS, RS * VIEW.ox, RS * VIEW.oy);
     this.blade.setTransform(RS, 0, 0, RS, RS * VIEW.ox, RS * VIEW.oy);
     this.S.imageSmoothingEnabled = true;
     this.S.imageSmoothingQuality = "high";
+  }
+
+  /**
+   * Self-repair for phones that drop canvas contents (switching apps, fullscreen changes, low graphics memory).
+   * Every second it reads one pixel from the wall layer; if the wall is missing three checks in a row it rebuilds
+   * every cached picture, and if that does not help it reloads the page once.
+   */
+  checkHealth(dt) {
+    this._healthT = (this._healthT || 0) + dt;
+    if (this._healthT < 1) return;
+    this._healthT = 0;
+    let ok = true;
+    try {
+      const probe = this._probe || (this._probe = makeCanvas(1, 1));
+      const g = getCtx(probe);
+      g.globalCompositeOperation = "copy";
+      for (const [fx, fy] of [[0.5, 0.5], [0.05, 0.5], [0.95, 0.5], [0.5, 0.05], [0.5, 0.95]]) {
+        g.drawImage(this.Lc, Math.floor(this.Lc.width * fx), Math.floor(this.Lc.height * fy), 1, 1, 0, 0, 1, 1);
+        const d = g.getImageData(0, 0, 1, 1).data;
+        if (d[3] > 0) { ok = true; break; } // the wall is fully opaque, so any painted pixel means the layer is alive
+        ok = false;
+      }
+    } catch (_e) { return; } // can't read: assume fine
+    this._blank = ok ? 0 : (this._blank || 0) + 1;
+    if (this._blank >= 3) { this._blank = 0; this.recover(); }
+  }
+
+  /** Rebuild every cached picture and layer from the original image files. */
+  recover() {
+    this._recoveries = (this._recoveries || 0) + 1;
+    if (this._recoveries > 2) { // rebuilding did not help: a clean reload is the last resort (once per session)
+      try {
+        if (!sessionStorage.getItem("blank-reload")) { sessionStorage.setItem("blank-reload", "1"); location.reload(); }
+      } catch (_e) { location.reload(); }
+      return;
+    }
+    this.art.rebuild();
+    this._layers = null;
+    this.resize();
   }
 
   /** A copy of the last picture shown (wipes and the results backdrop start from it). */
@@ -173,6 +224,7 @@ export class App {
   frameStep(realDt) {
     const dt = Math.min(realDt, 1 / 20);
     this.adapt(realDt);
+    this.checkHealth(realDt);
     this.step(dt, this.events.splice(0));
     this.compose();
   }
