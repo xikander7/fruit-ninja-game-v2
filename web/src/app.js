@@ -186,7 +186,20 @@ export class App {
         if (w > 60) { lit++; const b = read(this.canvas, fx, fy); if (b[0] + b[1] + b[2] > 15) shown++; }
       }
       screenBlack = layerOk && lit >= 2 && shown === 0; // the wall exists but never reached the screen
-      this.probeInfo = `layer=${layerOk} litPts=${lit} onScreen=${shown}`;
+      // Brightness (0-255) of the middle of each stage, so a phone report says where the picture is lost:
+      // IMG the wall photo file, WALL the finished wall, FRUIT a fruit photo, L the world layer, SCR the screen.
+      const lum = (c, fx = 0.5, fy = 0.5) => {
+        try {
+          const w = c.naturalWidth || c.width, h = c.naturalHeight || c.height;
+          if (!w || !h) return "x";
+          g.drawImage(c, Math.floor(w * fx), Math.floor(h * fy), 1, 1, 0, 0, 1, 1);
+          const d = g.getImageData(0, 0, 1, 1).data;
+          return d[3] === 0 ? "-" : String(Math.round((d[0] + d[1] + d[2]) / 3));
+        } catch (_e) { return "e"; }
+      };
+      const wall = this.art.view(VIEW.w, VIEW.h).bg;
+      this.probeInfo = `layer=${layerOk} lit=${lit} shown=${shown}
+IMG ${lum(this.art.bgImage)} WALL ${lum(wall)} FRUIT ${lum(this.art.fruits.watermelon.whole)} L ${lum(this.Lc)} SCR ${lum(this.canvas)} (numbers 0-255 = brightness, x = no size, - = empty, e = error)`;
     } catch (_e) { this.probeInfo = "probe failed"; this.showDebug(); return; } // can't read: assume fine
     this._blank = layerOk ? 0 : (this._blank || 0) + 1;
     this._screenBlack = screenBlack ? (this._screenBlack || 0) + 1 : 0;
@@ -214,7 +227,7 @@ export class App {
       el.style.cssText = "position:fixed;left:4px;top:4px;z-index:99;margin:0;padding:6px;background:#000c;color:#7f7;font:11px/1.3 monospace;max-width:60vw;white-space:pre-wrap;pointer-events:none";
       document.body.appendChild(el);
     }
-    el.textContent = [`build 2026-10-15c  dpr ${window.devicePixelRatio}  touch ${this.touch}`,
+    el.textContent = [`build 2026-10-15d  dpr ${window.devicePixelRatio}  touch ${this.touch}`,
       `view ${window.innerWidth}x${window.innerHeight}  canvas ${this.canvas.width}x${this.canvas.height}  RS ${this.RS}`,
       `fps ${Math.round(1 / Math.max(this.avgDt, 0.001))}  quality ${this.quality}  rsCap ${this.rsCap ?? "-"}  cpu ${!!this.cpu}  safe ${!!this.safe}  recoveries ${this._recoveries || 0}`,
       this.probeInfo, `error: ${this.lastError || "none"}`].join("\n");
