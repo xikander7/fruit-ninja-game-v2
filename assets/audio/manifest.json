@@ -1,0 +1,125 @@
+{
+ "groups": {
+  "boss_hit": [
+   "bosshit_1.wav",
+   "bosshit_2.wav",
+   "bosshit_3.wav",
+   "bosshit_4.wav"
+  ],
+  "boss_roar": [
+   "bossroar_1.wav",
+   "bossroar_2.wav"
+  ],
+  "clones": [
+   "clones_1.wav",
+   "clones_2.wav"
+  ],
+  "combo": [
+   "combo_1.wav",
+   "combo_2.wav"
+  ],
+  "dragonfire": [
+   "dragonfire_1.wav",
+   "dragonfire_2.wav",
+   "dragonfire_3.wav",
+   "dragonfire_4.wav"
+  ],
+  "explode": [
+   "explode_1.wav",
+   "explode_2.wav"
+  ],
+  "fever": [
+   "fever_1.wav"
+  ],
+  "fuse": [
+   "fuse_1.wav"
+  ],
+  "gong": [
+   "gong_1.wav",
+   "gong_2.wav",
+   "gong_3.wav"
+  ],
+  "miss": [
+   "miss_1.wav",
+   "miss_2.wav",
+   "miss_3.wav",
+   "miss_4.wav",
+   "miss_5.wav",
+   "miss_6.wav",
+   "miss_7.wav"
+  ],
+  "music": [
+   "music_1.wav"
+  ],
+  "power": [
+   "power_1.wav",
+   "power_2.wav"
+  ],
+  "shuriken": [
+   "shuriken_1.wav",
+   "shuriken_2.wav",
+   "shuriken_3.wav",
+   "shuriken_4.wav",
+   "shuriken_5.wav",
+   "shuriken_6.wav",
+   "shuriken_7.wav"
+  ],
+  "swoosh": [
+   "slash1_1.wav",
+   "slash1_2.wav",
+   "slash1_3.wav",
+   "slash1_4.wav",
+   "slash2_1.wav",
+   "slash2_2.wav",
+   "slash3_1.wav",
+   "slash3_2.wav",
+   "slash3_3.wav",
+   "slash3_4.wav"
+  ],
+  "splat": [
+   "splat1_1.wav",
+   "splat1_2.wav",
+   "splat1_3.wav",
+   "splat1_4.wav",
+   "splat1_5.wav",
+   "splat2_1.wav",
+   "splat2_10.wav",
+   "splat2_11.wav",
+   "splat2_12.wav",
+   "splat2_13.wav",
+   "splat2_14.wav",
+   "splat2_15.wav",
+   "splat2_2.wav",
+   "splat2_3.wav",
+   "splat2_4.wav",
+   "splat2_5.wav",
+   "splat2_6.wav",
+   "splat2_7.wav",
+   "splat2_8.wav",
+   "splat2_9.wav",
+   "splat3_1.wav",
+   "splat3_10.wav",
+   "splat3_11.wav",
+   "splat3_12.wav",
+   "splat3_13.wav",
+   "splat3_14.wav",
+   "splat3_15.wav",
+   "splat3_2.wav",
+   "splat3_3.wav",
+   "splat3_4.wav",
+   "splat3_5.wav",
+   "splat3_6.wav",
+   "splat3_7.wav",
+   "splat3_8.wav",
+   "splat3_9.wav"
+  ],
+  "timestop": [
+   "timestop_1.wav",
+   "timestop_2.wav"
+  ],
+  "throw": [
+   "ui_1.wav",
+   "ui_2.wav"
+  ]
+ }
+}

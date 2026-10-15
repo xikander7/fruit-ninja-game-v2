@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- index.html - the one page of the game. It holds three things: the loading/title screen (HTML + CSS), -->
+<!-- the <canvas> the game is drawn on, and a small script that decorates the loading screen. -->
+<!-- The game itself starts from src/main.js (loaded at the very bottom). -->
+<!-- == head: settings for the browser, phones and search/social previews == -->
+<meta charset="utf-8">
+<!-- viewport: make the page fit the phone's screen width; viewport-fit=cover uses the whole screen incl. notches; user-scalable=no stops pinch-zoom. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<!-- theme-color and the apple/mobile-web-app tags: dark browser bar, and allow "Add to Home Screen" to run like an app without browser chrome. -->
+<meta name="theme-color" content="#14080d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- description: the text shown under the title in search results and link previews. -->
+<meta name="description" content="Honey’s Slash &amp; Splash: swipe across fruit to slice it. Play it in your browser, on a computer or a phone.">
+<title>Honey’s Slash &amp; Splash</title>
+<!-- The tab icon, then fonts to start downloading right away so the title does not flash in a plain font. -->
+<link rel="icon" href="favicon.png">
+<link rel="preload" href="assets/fonts/CormorantSC-Bold.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="assets/fonts/BarlowCondensed-SemiBold.ttf" as="font" type="font/ttf" crossorigin>
+<!-- == styles: all the look of the loading/title screen lives here == -->
+<style>
+  /* Fonts: loaded from files in assets/fonts. font-display: swap shows a fallback font until they arrive. */
+  @font-face { font-family: "Cormorant SC"; font-weight: 700; font-display: swap; src: url(assets/fonts/CormorantSC-Bold.ttf) format("truetype"); }
+  @font-face { font-family: "Barlow Condensed"; font-weight: 600; font-display: swap; src: url(assets/fonts/BarlowCondensed-SemiBold.ttf) format("truetype"); }
+
+  /* Colour and font variables, used below as var(--name). Change one here to restyle the whole screen. */
+  :root {
+    --ink: #0a0808; --cream: #fff3dc; --muted: #c9b8a6; --gold: #ffd56b;
+    --pink: #ff2d7a; --red: #ff2d55; --orange: #ff8a1f; --lime: #86d33d; --violet: #8b3dff;
+    --display: "Cormorant SC", Georgia, "Times New Roman", serif;
+    --ui: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  }
+  /* Make the page exactly fill the screen with no scrolling or rubber-banding, and stop text selection (this is a game). */
+  html, body { margin: 0; height: 100%; background: var(--ink); overflow: hidden; overscroll-behavior: none; }
+  body { position: fixed; inset: 0; color: var(--gold); font-family: var(--display);
+         -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  /* #stage centres the game canvas on screen. touch-action: none stops the browser scrolling or zooming when you swipe on it. */
+  /* cursor: none hides the mouse pointer because the game draws its own blade. */
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #game { display: block; touch-action: none; cursor: none; background: var(--ink); }
+  /* When a phone is held upright the game is shown rotated 90 degrees so it can still use the long side (see input.js). */
+  #game.turned { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(90deg); }
+
+  /* The boot screen covers everything until the game is ready. z-index: 10 keeps it above the canvas; */
+  /* env(safe-area-inset-*) keeps content clear of phone notches. The background is glowing colour blobs over a photo. */
+  /* ---- the boot screen ---- */
+  #boot { position: fixed; inset: 0; z-index: 10; overflow: hidden; touch-action: none;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+          box-sizing: border-box; text-align: center; transition: opacity .45s;
+          background:
+            radial-gradient(60vmax 50vmax at 6% 4%, rgba(255, 45, 122, .6), transparent 62%),
+            radial-gradient(55vmax 45vmax at 98% 10%, rgba(255, 138, 31, .55), transparent 62%),
+            radial-gradient(60vmax 50vmax at 88% 100%, rgba(134, 211, 61, .42), transparent 62%),
+            radial-gradient(70vmax 60vmax at 4% 100%, rgba(139, 61, 255, .5), transparent 62%),
+            linear-gradient(rgba(14, 6, 10, .5), rgba(14, 6, 10, .72)),
+            url(assets/sprites/background.jpg) center / cover no-repeat var(--ink); }
+  #boot.gone { opacity: 0; pointer-events: none; }
+
+  /* Three layers of floating fruit (back, mid, front). Each moves a different amount with the mouse (--px, --py set by the script) */
+  /* to fake depth, called parallax. Far layers move little, near layers a lot. */
+  .layer { position: absolute; inset: 0; pointer-events: none; transition: transform .6s cubic-bezier(.2, .7, .2, 1); }
+  #back { transform: translate3d(calc(var(--px, 0) * 10px), calc(var(--py, 0) * 8px), 0); }
+  #mid { transform: translate3d(calc(var(--px, 0) * 26px), calc(var(--py, 0) * 18px), 0); }
+  #front { transform: translate3d(calc(var(--px, 0) * 64px), calc(var(--py, 0) * 44px), 0); z-index: 6; }
+  /* .f is one fruit and .fi is its inner wrapper that gently floats up and down (the drift animation below). */
+  .f { position: absolute; translate: -50% -50%; }
+  .fi { animation: drift var(--d, 7s) ease-in-out var(--o, 0s) infinite alternate; }
+  .f img { display: block; width: 100%; height: auto; -webkit-user-drag: none; }
+  #back .f { opacity: .75; }
+  #back img { filter: brightness(.7) saturate(1.1) blur(1.4px); }
+  #mid img { filter: drop-shadow(0 16px 14px rgba(0, 0, 0, .55)); }
+  #front img { filter: blur(7px) saturate(1.15); }
+  .f { transition: opacity .5s, scale .5s; }
+  .f.cut { opacity: 0; scale: .7; transition: none; }
+  /* A keyframes block describes an animation: start (from) and end (to) states. Used with alternate to rock back and forth. */
+  @keyframes drift {
+    from { transform: translateY(-1.2vmin) rotate(calc(var(--r, 0deg) - 4deg)); }
+    to { transform: translateY(1.2vmin) rotate(calc(var(--r, 0deg) + 4deg)); }
+  }
+  /* .half = a fruit half flying away after a swipe; .juice = the splash behind it (a mask lets one colour variable tint a shared shape). */
+  .half { position: fixed; z-index: 5; pointer-events: none; will-change: transform;
+          filter: drop-shadow(0 12px 10px rgba(0, 0, 0, .5)); }
+  .juice { position: fixed; z-index: 4; pointer-events: none; translate: -50% -50%; aspect-ratio: 1.1;
+           background: var(--c); -webkit-mask: url(assets/boot/splash.webp) center / contain no-repeat; mask: url(assets/boot/splash.webp) center / contain no-repeat; }
+  .juice::after { content: ""; position: absolute; inset: 0; mix-blend-mode: soft-light;
+                  background: url(assets/boot/splash.webp) center / contain no-repeat; }
+  /* The canvas that draws the glowing swipe trail above everything. */
+  #trail { position: fixed; inset: 0; z-index: 8; pointer-events: none; }
+
+  /* The game name: two words slide in from opposite sides, then a white slash line crosses it and a brush underline draws. */
+  /* ---- title ---- */
+  #hero { position: relative; z-index: 5; display: flex; flex-direction: column; align-items: center; gap: clamp(10px, 2.2vh, 22px); width: 100%; }
+  #pop { position: absolute; left: 50%; top: 40%; width: min(112vmin, 840px); translate: -50% -50%; opacity: 0;
+         --c: var(--pink); pointer-events: none; }
+  #boot.ready #pop { animation: pop 1.1s cubic-bezier(.2, .8, .2, 1) forwards; }
+  @keyframes pop { 0% { opacity: 0; scale: .5; } 35% { opacity: .85; } 100% { opacity: .3; scale: 1.02; } }
+  /* clamp(min, preferred, max) makes the font size scale with the window but never get too small or too big. */
+  /* The stacked text-shadows build a 3D red edge. */
+  #title { position: relative; margin: 0; font-weight: 700; font-size: clamp(52px, 8.4vw, 160px); line-height: .95; letter-spacing: .02em;
+           color: var(--cream); white-space: nowrap;
+           text-shadow: 0 .03em 0 #d4143a, 0 .06em 0 #8f0c28, 0 .09em 0 #5a0719, 0 .2em .25em rgba(0, 0, 0, .55); }
+  #title .t { display: inline-block; transform: skewX(-8deg); }
+  #title .t1 { animation: fromL .9s cubic-bezier(.2, .8, .2, 1) both; }
+  #title .t2 { animation: fromR .9s cubic-bezier(.2, .8, .2, 1) both; }
+  #title i { font-style: italic; color: #ff5c8a; text-shadow: 0 .03em 0 #b3124a, 0 .06em 0 #6e0a30, 0 .2em .25em rgba(0, 0, 0, .55); }
+  @keyframes fromL { from { opacity: 0; transform: translateX(-12vw) skewX(-8deg); } to { opacity: 1; transform: skewX(-8deg); } }
+  @keyframes fromR { from { opacity: 0; transform: translateX(12vw) skewX(-8deg); } to { opacity: 1; transform: skewX(-8deg); } }
+  /* #cut is the white slash line. It starts invisible and squashed (scaleX(0)); the slash animation grows and fades it. */
+  #cut { position: absolute; left: -4%; right: -4%; top: 50%; height: .045em; font-size: inherit; pointer-events: none; opacity: 0;
+         background: linear-gradient(90deg, transparent, #fff 18%, #fff 82%, transparent); transform: rotate(-9deg) scaleX(0); }
+  #title.sweep #cut { animation: slash .7s cubic-bezier(.3, .7, .2, 1); }
+  @keyframes slash { 0% { opacity: 1; transform: rotate(-9deg) scaleX(0); } 45% { opacity: 1; transform: rotate(-9deg) scaleX(1); } 100% { opacity: 0; transform: rotate(-9deg) scaleX(1.08); } }
+  /* The colourful brush underline. clip-path cuts the rectangle into a brush-like shape. */
+  #swash { width: min(62%, 620px); height: clamp(7px, 1.1vmin, 12px); margin-top: -.5vh; background: linear-gradient(90deg, var(--lime), var(--gold) 30%, var(--orange) 55%, var(--red) 80%, var(--pink));
+           clip-path: polygon(0 55%, 8% 20%, 60% 0, 100% 45%, 62% 78%, 10% 100%); transform: scaleX(0); transform-origin: left; animation: swash .7s .8s cubic-bezier(.2, .8, .2, 1) forwards; }
+  @keyframes swash { to { transform: scaleX(1); } }
+  #tag { margin: 0; font-family: var(--ui); font-weight: 600; font-size: clamp(14px, 2vw, 22px); letter-spacing: .5em; text-indent: .5em; color: var(--gold);
+         animation: rise .7s 1.05s both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  /* Loading bar, status text and the Play buttons. #loader and #buttons share one grid cell (#slot) so they swap in place. */
+  /* ---- progress and buttons ---- */
+  #slot { display: grid; justify-items: center; align-items: start; min-height: 150px; margin-top: clamp(4px, 1.5vh, 16px); }
+  #slot > * { grid-area: 1 / 1; }
+  #loader { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  #boot.ready #loader { display: none; }
+  #track { --tw: min(440px, 72vw); width: var(--tw); height: 8px; border-radius: 8px; background: rgba(255, 243, 220, .16); overflow: hidden; margin-top: clamp(8px, 2vh, 20px); animation: rise .7s 1.2s both; }
+  #bar { width: 0; height: 100%; overflow: hidden; border-radius: 8px; transition: width .2s; }
+  /* The bar's gradient is as wide as the whole track, and #bar just reveals more of it as it grows. */
+  #bar::after { content: ""; display: block; width: var(--tw); height: 100%; background: linear-gradient(90deg, var(--lime), var(--gold) 30%, var(--orange) 55%, var(--red) 80%, var(--pink)); }
+  #status { min-height: 1.3em; margin: 0; font-family: var(--ui); font-weight: 600; font-size: 17px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  #buttons { display: flex; flex-direction: column; gap: 14px; align-items: center; animation: rise .6s both; }
+  /* The [hidden] attribute is toggled by main.js; this makes sure hidden things really disappear even though they set display. */
+  #buttons[hidden], #retry[hidden], #track[hidden] { display: none; }
+  button { font-family: var(--ui); font-weight: 600; text-transform: uppercase; cursor: pointer; border: 0; color: var(--cream); -webkit-appearance: none; appearance: none; }
+  /* The big pill-shaped Play button: gradient fill, a darker "edge" shadow for a 3D look that presses down when clicked. */
+  #play, #retry { font-size: clamp(26px, 4vw, 34px); letter-spacing: .16em; text-indent: .16em; min-width: min(300px, 78vw); min-height: 60px; padding: 14px 54px; border-radius: 999px;
+                  background: linear-gradient(135deg, var(--pink), var(--red) 45%, var(--orange));
+                  box-shadow: 0 6px 0 #8d0f33, 0 16px 26px rgba(0, 0, 0, .5); transition: transform .12s, box-shadow .12s, filter .2s; animation: breathe 2.6s ease-in-out infinite; }
+  #play:hover, #play:focus-visible { filter: brightness(1.12) saturate(1.1); }
+  button:focus-visible { outline: 3px solid var(--gold); outline-offset: 4px; }
+  #play:active, #retry:active { transform: translateY(5px); box-shadow: 0 1px 0 #8d0f33, 0 6px 12px rgba(0, 0, 0, .5); animation: none; }
+  #hint { margin: 4px 0 0; font-family: var(--ui); font-weight: 600; font-size: 16px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  @keyframes breathe { 50% { transform: scale(1.035); } }
+  #fs { font-size: 18px; letter-spacing: .18em; text-indent: .18em; min-height: 44px; padding: 10px 30px; border-radius: 999px; background: rgba(10, 8, 8, .35);
+        box-shadow: inset 0 0 0 1.5px rgba(255, 243, 220, .45); transition: background .2s, box-shadow .2s; }
+  #fs:hover, #fs:focus-visible { background: rgba(255, 243, 220, .16); box-shadow: inset 0 0 0 1.5px var(--cream); }
+
+  /* Responsive rules (media queries): they apply only on narrow, tall or short windows. */
+  /* a phone held upright, or any narrow window: the name stacks on two lines */
+  @media (max-aspect-ratio: 1/1), (max-width: 700px) {
+    #title { font-size: min(21vw, 15vh, 130px); white-space: normal; }
+    #title .t { display: block; }
+    #title .t1 { margin-bottom: .04em; }
+    #swash { width: min(70%, 380px); }
+    #tag { letter-spacing: .36em; text-indent: .36em; }
+  }
+  @media (max-height: 460px) and (min-aspect-ratio: 1/1) {
+    #title { font-size: min(11vw, 26vh); }
+    #tag, #swash { display: none; }
+  }
+  /* Respect people who ask their device for less motion: turn the decorative animations off. */
+  @media (prefers-reduced-motion: reduce) {
+    .fi, #play, #title .t, #swash, #tag, #track, #buttons { animation: none; }
+    #swash { transform: none; }
+    #boot.ready #pop { animation: none; opacity: .3; }
+  }
+</style>
+</head>
+<body>
+<!-- == the game canvas: everything in play is drawn here; 1280x720 is the base size, scaled to fit the screen by app.js == -->
+<div id="stage"><canvas id="game" width="1280" height="720"></canvas></div>
+<!-- == loading / title screen: sits on top of the canvas until Play is pressed (main.js adds the "gone" class) == -->
+<div id="boot">
+  <!-- Decorative fruit are filled in here by the script below. -->
+  <div class="juice" id="pop"></div>
+  <div class="layer" id="back"></div>
+  <div class="layer" id="mid"></div>
+  <!-- The centred block: splash, title, underline, tagline, then the loader/buttons. -->
+  <div id="hero">
+    <!-- The visible title. The ids (bar, status, buttons, play, fs, retry, track) are used by src/main.js, so keep them. -->
+    <h1 id="title"><span class="t t1">Honey’s Slash</span> <span class="t t2"><i>&amp;</i> Splash</span><span id="cut"></span></h1>
+    <div id="swash"></div>
+    <p id="tag">FRUIT-SLICING ARCADE</p>
+    <!-- While loading: progress bar + status (or a retry button on error). When loaded: the Play buttons replace them. -->
+    <div id="slot">
+      <div id="loader">
+        <div id="track"><div id="bar"></div></div>
+        <p id="status">Sharpening the blade…</p>
+        <button id="retry" hidden>Try again</button>
+      </div>
+      <div id="buttons" hidden>
+        <button id="play">Play</button>
+        <button id="fs">Play fullscreen</button>
+        <p id="hint">Swipe through the fruit</p>
+      </div>
+    </div>
+  </div>
+  <div class="layer" id="front"></div>
+  <!-- Canvas for the swipe trail. -->
+  <canvas id="trail"></canvas>
+</div>
+<!-- == decoration script: runs right away and only affects this loading screen. It is not the game. == -->
+<script>
+// Boot screen decoration: three planes of fruit that drift and shift with the pointer, and a blade you can swipe
+// through them. It never touches the game; main.js only needs the ids above.
+// Wrapped in an immediately-invoked function so its variables stay private to this script.
+(() => {
+  const boot = document.getElementById("boot"), title = document.getElementById("title");
+  const layers = { back: document.getElementById("back"), mid: document.getElementById("mid"), front: document.getElementById("front") };
+  // The splash colour for each fruit.
+  const JUICE = { watermelon: "#ff2d55", orange: "#ff8a1f", kiwi: "#8fd14f", dragonfruit: "#ff3cac", apple: "#f7e7a0",
+                  strawberry: "#ff2740", lemon: "#ffe030", peach: "#ffa45c", banana: "#ffe9a0" };
+  // Each row below is one decoration. WIDE is the landscape layout, TALL the portrait one (the same rows, rearranged).
+  // plane, fruit, x %, y %, width in vmin, rotation. Chosen so the middle of the screen stays clear for the name.
+  const WIDE = [
+    ["back", "apple", 7, 36, 9, -15], ["back", "peach", 30, 91, 9, 10], ["back", "lemon", 91, 34, 9, 25], ["back", "strawberry", 58, 8, 7, -20],
+    ["mid", "watermelon", 14, 68, 31, -12], ["mid", "orange", 87, 68, 24, 15], ["mid", "dragonfruit", 14, 16, 16, -22],
+    ["mid", "banana", 81, 18, 14, 28], ["mid", "kiwi", 68, 86, 14, 18],
+    ["front", "lemon", -2, 98, 30, 20], ["front", "strawberry", 103, 4, 24, -30],
+  ];
+  const TALL = [
+    ["back", "apple", 10, 38, 15, -15], ["back", "peach", 90, 40, 15, 12], ["back", "lemon", 42, 95, 17, 20], ["back", "strawberry", 62, 5, 12, -20],
+    ["mid", "watermelon", 22, 14, 35, -12], ["mid", "orange", 80, 22, 27, 15], ["mid", "dragonfruit", 20, 84, 22, -22],
+    ["mid", "banana", 82, 80, 17, 28], ["mid", "kiwi", 52, 62, 0, 0],
+    ["front", "lemon", -4, 100, 40, 20], ["front", "strawberry", 104, 0, 34, -30],
+  ].filter((r) => r[4]);
+  // Only the back and middle fruit can be sliced; this list tracks them.
+  let fruit = [];
+
+  // Creates the floating fruit for the current window shape. Called at start and again when the window is resized.
+  function build() {
+    for (const l of Object.values(layers)) l.textContent = "";
+    fruit = [];
+    // Portrait screens (taller than wide) use the TALL layout.
+    const tall = innerHeight > innerWidth * 1.05;
+    for (const [plane, name, x, y, w, r] of tall ? TALL : WIDE) {
+      const f = document.createElement("div");
+      f.className = "f";
+      // Position by percentages; random float speed (--d) and a random start offset (--o) so fruit do not move in sync.
+      f.style.cssText = `left:${x}%;top:${y}%;width:min(${w}vmin,${w * (tall ? 5 : 10)}px);--r:${r}deg;--d:${(5 + Math.random() * 4).toFixed(1)}s;--o:-${(Math.random() * 6).toFixed(1)}s`;
+      const i = document.createElement("div");
+      i.className = "fi";
+      const img = new Image();
+      img.alt = ""; img.draggable = false; img.decoding = "async";
+      // If a picture fails to load, quietly drop it rather than show a broken icon.
+      img.onerror = () => f.remove();
+      img.src = `assets/boot/${name}.webp`;
+      i.append(img); f.append(i); layers[plane].append(f);
+      if (plane !== "front") fruit.push({ f, img, name, live: true });
+    }
+  }
+
+  // ---- slicing ----
+  // Same geometry as rules/collide.js: does the swipe line segment a->b pass within r pixels of the point (cx, cy)?
+  function hits(a, b, cx, cy, r) {
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((cx - a.x) * dx + (cy - a.y) * dy) / l2));
+    return Math.hypot(a.x + t * dx - cx, a.y + t * dy - cy) < r;
+  }
+
+  // Cut a floating fruit: it vanishes, a splash plays and two half-pictures fly apart, tumbling and falling. It returns after 3.2 seconds.
+  function slice(it, a, b) {
+    const box = it.img.getBoundingClientRect();
+    const cx = box.left + box.width / 2, cy = box.top + box.height / 2, size = Math.max(box.width, box.height);
+    const scale = 0.72 * box.width / (it.img.naturalWidth || box.width); // the half art is framed larger than the whole
+    it.live = false;
+    it.f.classList.add("cut");
+    setTimeout(() => { it.f.classList.remove("cut"); it.live = true; }, 3200);
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    // Perpendicular direction: the halves separate sideways across the cut line.
+    const px = dy / len, py = -dx / len; // unit vector across the cut: the halves part along it
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    const juice = document.createElement("div");
+    juice.className = "juice";
+    juice.style.cssText = `--c:${JUICE[it.name]};left:${cx}px;top:${cy}px;width:${size * 2.8}px`;
+    boot.append(juice);
+    // The Web Animations API: animate(keyframes, options) runs an animation from JavaScript; onfinish tidies up.
+    juice.animate([{ opacity: 0, scale: .3 }, { opacity: .95, scale: 1, offset: .25 }, { opacity: 0, scale: 1.12 }], { duration: 1100, easing: "ease-out" }).onfinish = () => juice.remove();
+    // s = -1 is one half, +1 the other. They rotate 180 degrees apart so their cut edges face each other.
+    for (const s of [-1, 1]) {
+      const h = new Image();
+      h.className = "half";
+      h.onload = () => {
+        h.style.cssText = `left:${cx}px;top:${cy}px;width:${h.naturalWidth * scale}px;translate:-50% -50%`;
+        const rot = ang + (s < 0 ? 0 : 180);
+        const out = size * 0.55 * s, fall = innerHeight * 0.55;
+        h.animate([
+          { transform: `rotate(${rot}deg)`, opacity: 1 },
+          { transform: `translate(${px * out}px, ${py * out - size * .25}px) rotate(${rot + s * 50}deg)`, opacity: 1, offset: .35 },
+          { transform: `translate(${px * out * 1.8}px, ${py * out * 1.8 + fall}px) rotate(${rot + s * 140}deg)`, opacity: 0 },
+        ], { duration: 1300, easing: "cubic-bezier(.3, .1, .6, 1)" }).onfinish = () => h.remove();
+      };
+      h.src = `assets/boot/${it.name}_half.webp`;
+      boot.append(h);
+    }
+  }
+
+  // ---- the swipe trail ----
+  // Swipe trail: points are remembered for 260 ms, and each frame redraws them fading and thinning out.
+  const cv = document.getElementById("trail"), g = cv.getContext("2d");
+  let pts = [], raf = 0;
+  // Match the trail canvas to the window. devicePixelRatio makes it sharp on high-density screens (capped at 2 to save memory).
+  function fit() {
+    const k = Math.min(2, devicePixelRatio || 1);
+    cv.width = innerWidth * k; cv.height = innerHeight * k;
+    g.setTransform(k, 0, 0, k, 0, 0);
+  }
+  // Draws a wide soft pink line and a thin white line for each recent segment; the older, the fainter.
+  function paint(now) {
+    pts = pts.filter((p) => now - p.t < 260);
+    g.clearRect(0, 0, innerWidth, innerHeight);
+    for (let i = 1; i < pts.length; i++) {
+      const life = 1 - (now - pts[i].t) / 260;
+      for (const [w, col] of [[14, `rgba(255, 45, 122, ${life * .35})`], [5, `rgba(255, 255, 255, ${life})`]]) {
+        g.strokeStyle = col; g.lineWidth = w * life; g.lineCap = "round";
+        g.beginPath(); g.moveTo(pts[i - 1].x, pts[i - 1].y); g.lineTo(pts[i].x, pts[i].y); g.stroke();
+      }
+    }
+    raf = pts.length ? requestAnimationFrame(paint) : 0;
+  }
+
+  // A mouse slices as it moves; a finger or pen only while it is down (move events only come then anyway).
+  // A mouse slices as it moves; a finger or pen only while it is down.
+  let prev = null;
+  boot.addEventListener("pointerup", () => { prev = null; });
+  boot.addEventListener("pointercancel", () => { prev = null; });
+  // Pointer moved: update the parallax (mouse only), extend the trail, and slice any fruit the swipe passes through.
+  boot.addEventListener("pointermove", (e) => {
+    const now = performance.now(), p = { x: e.clientX, y: e.clientY, t: now };
+    if (e.pointerType === "mouse") {
+      boot.style.setProperty("--px", (-(p.x / innerWidth - .5) * 2).toFixed(3));
+      boot.style.setProperty("--py", (-(p.y / innerHeight - .5) * 2).toFixed(3));
+    }
+    if (prev && now - prev.t < 80) {
+      pts.push(p);
+      if (!raf) raf = requestAnimationFrame(paint);
+      // Speed in pixels per second. Only fast swipes slice, so slowly moving the mouse around does not.
+      const speed = Math.hypot(p.x - prev.x, p.y - prev.y) / Math.max(1, now - prev.t) * 1000;
+      if (speed > 300) for (const it of fruit) {
+        if (!it.live) continue;
+        const r = it.img.getBoundingClientRect();
+        if (hits(prev, p, r.left + r.width / 2, r.top + r.height / 2, Math.max(r.width, r.height) * .42)) slice(it, prev, p);
+      }
+    }
+    prev = p;
+  });
+
+  // ---- start up ----
+  // Watches for main.js revealing the Play buttons (it removes their hidden attribute), which means loading finished.
+  new MutationObserver(() => { // the game is loaded: splash behind the name, and the blade crosses it once more
+    if (!document.getElementById("buttons").hidden) {
+      boot.classList.add("ready");
+      // Reading offsetWidth forces the browser to apply the removed class first, so adding it again restarts the animation.
+      title.classList.remove("sweep"); void title.offsetWidth; title.classList.add("sweep");
+    }
+  }).observe(document.getElementById("buttons"), { attributes: true, attributeFilter: ["hidden"] });
+  setTimeout(() => title.classList.add("sweep"), 700);
+  setInterval(() => { if (!boot.classList.contains("gone")) { title.classList.remove("sweep"); void title.offsetWidth; title.classList.add("sweep"); } }, 6500);
+  let timer = 0;
+  addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(() => { fit(); build(); }, 150); });
+  fit(); build();
+})();
+</script>
+<!-- == the game: a JavaScript module (can use import/export). Starts everything in src/main.js == -->
+<script type="module" src="src/main.js?v=229f44b64d"></script>
+</body>
+</html>
