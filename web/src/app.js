@@ -60,6 +60,11 @@ export class App {
     this.pointerActive = !touch; // a mouse is always there; a finger only while it touches
     this.events = [];
     this.wipe = null;
+    // Chrome on Android can draw the layered picture blank when its graphics path misbehaves (Brave on the same phone
+    // does not). Software-drawn layers sidestep that, so Chrome on Android uses them; ?cpu forces them, ?gpu opts out.
+    const ua = navigator.userAgent;
+    const chromeAndroid = touch && /Android/.test(ua) && /Chrome\//.test(ua) && !navigator.brave && !/SamsungBrowser|EdgA|OPR|Firefox/.test(ua);
+    this.cpu = /[?&]cpu/.test(location.search) || (chromeAndroid && !/[?&]gpu/.test(location.search));
     this.quality = 2; // 2 full bloom, 1 light bloom, 0 none: stepped down if frames run long
     this.avgDt = 1 / 60; this.slowFrames = 0;
     this.bloomOn = true;
@@ -139,7 +144,8 @@ export class App {
       if (old && old[0].width === w && old[0].height === h) return old;
       if (old) { old[0].width = 0; old[0].height = 0; }
       const c = makeCanvas(w, h);
-      return [c, getCtx(c)];
+      // cpu: ask for software-drawn canvases, which skips the phone's graphics chip entirely
+      return [c, c.getContext("2d", this.cpu ? { willReadFrequently: true } : undefined)];
     };
     const old = this._layers || {};
     this._layers = {
@@ -166,20 +172,56 @@ export class App {
     this._healthT = (this._healthT || 0) + dt;
     if (this._healthT < 1) return;
     this._healthT = 0;
-    let ok = true;
+    const pts = [[0.5, 0.5], [0.05, 0.5], [0.95, 0.5], [0.5, 0.05], [0.5, 0.95]];
+    let layerOk = false, screenBlack = false;
     try {
       const probe = this._probe || (this._probe = makeCanvas(1, 1));
       const g = getCtx(probe);
       g.globalCompositeOperation = "copy";
-      for (const [fx, fy] of [[0.5, 0.5], [0.05, 0.5], [0.95, 0.5], [0.5, 0.05], [0.5, 0.95]]) {
-        g.drawImage(this.Lc, Math.floor(this.Lc.width * fx), Math.floor(this.Lc.height * fy), 1, 1, 0, 0, 1, 1);
-        const d = g.getImageData(0, 0, 1, 1).data;
-        if (d[3] > 0) { ok = true; break; } // the wall is fully opaque, so any painted pixel means the layer is alive
-        ok = false;
+      const read = (c, fx, fy) => {
+        g.drawImage(c, Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1, 0, 0, 1, 1);
+        return g.getImageData(0, 0, 1, 1).data;
+      };
+      let lit = 0, shown = 0;
+      for (const [fx, fy] of pts) {
+        const a = read(this.Lc, fx, fy);
+        if (a[3] > 0) layerOk = true; // the wall is fully opaque, so any painted pixel means the layer is alive
+        const w = a[0] + a[1] + a[2];
+        if (w > 60) { lit++; const b = read(this.canvas, fx, fy); if (b[0] + b[1] + b[2] > 15) shown++; }
       }
-    } catch (_e) { return; } // can't read: assume fine
-    this._blank = ok ? 0 : (this._blank || 0) + 1;
-    if (this._blank >= 3) { this._blank = 0; this.recover(); }
+      screenBlack = layerOk && lit >= 2 && shown === 0; // the wall exists but never reached the screen
+      this.probeInfo = `layer=${layerOk} litPts=${lit} onScreen=${shown}`;
+    } catch (_e) { this.probeInfo = "probe failed"; this.showDebug(); return; } // can't read: assume fine
+    this._blank = layerOk ? 0 : (this._blank || 0) + 1;
+    this._screenBlack = screenBlack ? (this._screenBlack || 0) + 1 : 0;
+    if (this._screenBlack >= 2) { // drawn but not shown: step down to simpler drawing, one level at a time
+      this._screenBlack = 0;
+      if (!this.cpu) { this.cpu = true; this._layers = null; this.resize(); } // 1: draw the layers in software
+      else if (this.quality > 0) this.quality = 0; // 2: no glow
+      else if (!this.safe) this.safe = true; // 3: plain copy, no camera zoom or additive layer
+      else this.recover(); // 4: rebuild everything
+    }
+    if (this._blank >= 3) { // the world layer itself is empty: software canvases first, then a full rebuild
+      this._blank = 0;
+      if (!this.cpu) { this.cpu = true; this._layers = null; this.resize(); } else this.recover();
+    }
+    this.showDebug();
+  }
+
+  /** ?debug on the address shows a small report on screen: what this phone runs and what went wrong. */
+  showDebug() {
+    if (!/[?&]debug/.test(location.search)) return;
+    let el = document.getElementById("dbg");
+    if (!el) {
+      el = document.createElement("pre");
+      el.id = "dbg";
+      el.style.cssText = "position:fixed;left:4px;top:4px;z-index:99;margin:0;padding:6px;background:#000c;color:#7f7;font:11px/1.3 monospace;max-width:60vw;white-space:pre-wrap;pointer-events:none";
+      document.body.appendChild(el);
+    }
+    el.textContent = [`build 2026-10-15b  dpr ${window.devicePixelRatio}  touch ${this.touch}`,
+      `view ${window.innerWidth}x${window.innerHeight}  canvas ${this.canvas.width}x${this.canvas.height}  RS ${this.RS}`,
+      `quality ${this.quality}  cpu ${!!this.cpu}  safe ${!!this.safe}  recoveries ${this._recoveries || 0}`,
+      this.probeInfo, `error: ${this.lastError || "none"}`].join("\n");
   }
 
   /** Rebuild every cached picture and layer from the original image files. */
@@ -224,9 +266,14 @@ export class App {
   frameStep(realDt) {
     const dt = Math.min(realDt, 1 / 20);
     this.adapt(realDt);
-    this.checkHealth(realDt);
-    this.step(dt, this.events.splice(0));
-    this.compose();
+    try {
+      this.checkHealth(realDt);
+      this.step(dt, this.events.splice(0));
+      this.compose();
+    } catch (e) { // keep the loop alive and remember why a frame failed (shown by ?debug)
+      this.lastError = `${e && e.message} @ ${((e && e.stack) || "").split("\n")[1] || ""}`;
+      if (!this._errLogged) { this._errLogged = true; console.error(e); }
+    }
   }
 
   /** If frames keep running long, step the glow down a level: a steady frame rate beats a prettier slideshow. */
@@ -322,6 +369,20 @@ export class App {
     } else {
       S.save();
       S.scale(RS, RS);
+      if (this.safe) { // fallback for phones whose graphics chip fumbles the layered picture: wall and fruit only
+        S.drawImage(this.Lc, 0, 0);
+        S.restore();
+        S.setTransform(RS, 0, 0, RS, RS * ox, RS * oy);
+        sc.drawScreenFx(S);
+        S.setTransform(1, 0, 0, 1, 0, 0);
+        S.drawImage(this.uic, 0, 0);
+        if (sc.wantSnapshot) sc.onSnapshot(this.snapshot());
+        S.setTransform(RS, 0, 0, RS, RS * ox, RS * oy);
+        if (this.wipe) this.wipe.draw(S);
+        S.setTransform(1, 0, 0, 1, 0, 0);
+        this.drawBlade();
+        return;
+      }
       S.translate(vw / 2, vh / 2);
       S.scale(p.zoom, p.zoom); // the camera: a combo punches in, a bomb shakes
       S.translate(-vw / 2 + p.shake[0], -vh / 2 + p.shake[1]);
