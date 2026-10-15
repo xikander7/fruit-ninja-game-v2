@@ -75,16 +75,15 @@ export class SliceButton {
     return false;
   }
 
-  /** The fruit is cut and its seal stamped; with no segment (a key press) the cut is a diagonal stroke. */
+  /** The fruit is cut; with no segment (a key press) the cut is a diagonal stroke. */
   cut(ax, ay, bx, by) {
     if (!this.body.alive) return;
     if (ax === undefined) [ax, ay, bx, by] = [this.x - 80, this.y - 60, this.x + 80, this.y + 60];
     this.world.cut(this.body, ax, ay, bx, by);
-    this.world.stamp(this.glyph, this.title, this.x, this.y - 10, 110);
     this.cutAt = this.t;
   }
 
-  // Draws the ring, the seal symbol and the labels. `ui` is the 2D canvas context for the interface layer.
+  // Draws the ring and the labels. `ui` is the 2D canvas context for the interface layer.
   draw(ui) {
     const f = this.world.art.fonts, R = this.ring;
     const ring = hairlineRing(R);
@@ -94,8 +93,6 @@ export class SliceButton {
       const u = Math.min(1.0, (this.t - this.cutAt) / 0.35);
       if (u < 1) { const k = 1 + 0.25 * u; blit(ui, ring, this.x - (ring.lw * k) / 2, this.y - (ring.lh * k) / 2, 1 - u, k); }
     }
-    const seal = this.world.art.seal(this.glyph, 40);
-    ui.drawImage(seal, this.x - R * 0.74 - 20, this.y - R * 0.74 - 20);
     const y = this.y + R + 34;
     label(ui, f, f.mode, this.title, WASHI, [this.x, y], "center", 1);
     if (this.sub) label(ui, f, f.mono15, this.sub, MUTED, [this.x, y + 34]);
