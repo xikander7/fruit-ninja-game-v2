@@ -52,7 +52,7 @@ class PostFXRender(unittest.TestCase):
             return sum(img.get_at((x + i, y + j))[0] for i in range(-2, 3) for j in range(-2, 3)) / 25
 
         x, y = W // 2 + 4 + 20, H // 2  # 20 px right of the square
-        self.assertGreater(on.get_at((x, y))[0], 0)
+        # Compare areas only: bloom adds about 1/255 here and grain is +-6/255, so a single pixel can read 0 on some GPUs.
         self.assertGreater(patch(on, x, y), patch(off, x, y) + 0.5)
         self.assertLess(on.get_at((2, 2))[0], 30)
 
